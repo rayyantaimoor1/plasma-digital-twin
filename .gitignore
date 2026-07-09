@@ -1,0 +1,28 @@
+# Virtual environment
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# Generated data (reproducible from fixed seeds — see FE-1.3.7)
+data/*.db
+data/*.csv
+data/mlruns/
+mlruns/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings (machine-specific, not project config)
+.claude/
+
+# Env secrets (none expected, but don't commit if added later)
+.env
