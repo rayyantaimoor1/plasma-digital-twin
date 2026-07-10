@@ -73,7 +73,13 @@ pytest
   ([`digital_twin/sensitivity_analysis.py`](digital_twin/sensitivity_analysis.py)). Done.
   One-at-a-time sweeps, sensitivity ranking, and Plotly figures (bar chart, effect
   curves, paired-sweep heatmap).
+- **Sub-Module 1.3** — synthetic dataset generation with hidden confounders
+  ([`digital_twin/dataset_generation.py`](digital_twin/dataset_generation.py)). Done.
+  Wall-temperature drift, electrode aging, and gas-purity variance shift the label but
+  are withheld from the features (confounder strengths documented a priori in the module
+  docstring). Soft quartile labelling, region + random splits, CSV export, SQLite storage.
+  Run `python -m digital_twin.dataset_generation` to see the confounding in action.
 
 See [`CLAUDE.md`](CLAUDE.md) for the full module build order and non-negotiable technical
-principles — read it before starting any new module. Sub-Module 1.3 (synthetic dataset
-generation with hidden confounders) remains, ahead of 1.6 (physics validation).
+principles — read it before starting any new module. Remaining Phase 1 work: Sub-Module 1.6
+(physics validation against literature).
