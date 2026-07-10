@@ -53,6 +53,12 @@ pytest
 
 ## Status
 
-Phase 0 (repo skeleton) in progress. See [`CLAUDE.md`](CLAUDE.md) for the full module
-build order and non-negotiable technical principles — read it before starting any new
-module.
+- **Phase 0** — repo skeleton, environment, pinned `requirements.txt`. Done.
+- **Sub-Module 1.2** — 0D global discharge physics engine
+  ([`digital_twin/physics_engine.py`](digital_twin/physics_engine.py)). Done.
+  Particle balance solves for electron temperature via `scipy.optimize.brentq`; power
+  balance solves for plasma density. Run it standalone with
+  `python digital_twin/physics_engine.py` to see a sample sweep.
+
+See [`CLAUDE.md`](CLAUDE.md) for the full module build order and non-negotiable technical
+principles — read it before starting any new module.
