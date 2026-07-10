@@ -41,8 +41,21 @@ plasma-physics literature. They are *inputs* to the model derived from measured 
 cross-sections - fundamentally different from fitting the model's *output* curve, which is
 the practice this sub-module was revised to eliminate.
 
+A note on the driven-electrode sheath voltage (FE-1.2.3). From (RF power, pressure)
+ALONE the driven-sheath voltage is physically under-determined: because the power balance
+makes n_e proportional to power, any "ion power = fraction of absorbed power" closure
+cancels the power dependence straight back out, so no formula in those two inputs can
+determine it. The honest resolution is to accept a THIRD, independent drive parameter -
+the RF voltage amplitude - and then the sheath becomes a genuinely *computed* quantity via
+the collisionless Child-Langmuir sheath (L&L Sec. 11.2), using the rigorously solved n_e.
+`simulate(..., rf_voltage_v=...)` does exactly this. When no RF voltage is supplied the
+engine falls back to a clearly-labelled order-of-magnitude estimate (see
+`_estimated_rf_bias_voltage`) so the two-input interface still works, but the estimate is
+explicitly a fallback, not the physics.
+
 References:
-  Lieberman & Lichtenberg (2005), Ch. 3 (rate coefficients) and Ch. 10 (global model).
+  Lieberman & Lichtenberg (2005), Ch. 3 (rate coefficients), Ch. 10 (global model),
+    Ch. 11 (capacitive discharges and the Child-Langmuir sheath).
   Chabert & Braithwaite (2011), Physics of Radio-Frequency Plasmas.
 """
 from __future__ import annotations
@@ -104,11 +117,21 @@ UNIFORMITY_HR_REF = 0.5            # radial edge-to-center ratio treated as "fla
 ETCH_ENERGY_THRESHOLD = 16.0       # ion-energy threshold for etching/sputtering [eV]
 ETCH_SCALE = 2.0e-19               # scales flux*sqrt(eV) to ~nm/min (illustrative)
 
-# Sheath-to-Debye-length ratio used by the RF self-bias estimate in
-# sheath_and_ion_energy(). Real matrix sheaths run roughly 10-100 Debye lengths
-# thick depending on V_s/Te (Child-law scaling s_m/lambda_D ~ sqrt(2)*(V0/Te)^0.75);
-# 20 is a round, mid-range, documented choice, not fit to any target output.
+# Sheath-to-Debye-length ratio used ONLY by the FALLBACK RF self-bias estimate
+# (_estimated_rf_bias_voltage), i.e. when no RF voltage is supplied. Real matrix
+# sheaths run roughly 10-100 Debye lengths thick depending on V_s/Te (Child-law
+# scaling s_m/lambda_D ~ sqrt(2)*(V0/Te)^0.75); 20 is a round, mid-range choice.
+# When rf_voltage_v IS supplied, the sheath thickness is computed from the
+# Child-Langmuir law instead and this constant is not used.
 SHEATH_DEBYE_MULTIPLIER = 20.0
+
+# Time-averaged sheath voltage as a fraction of the peak RF voltage, for a
+# symmetric capacitive discharge. The instantaneous sheath voltage swings between
+# ~0 (sheath collapsed) and ~V_rf (fully extended); at 13.56 MHz the ions are far
+# too heavy to follow the RF and instead respond to the time-average, ~V_rf/2
+# (L&L Sec. 11.2). For a strongly asymmetric driven electrode this fraction tends
+# toward 1; 0.5 is the standard symmetric-discharge value.
+RF_MEAN_SHEATH_FRACTION = 0.5
 
 # Ion energy at which damage risk crosses 0.5, and the transition softness [eV].
 # Calibrated to the corrected sheath model's operating-envelope range of ion
@@ -435,70 +458,159 @@ def solve_plasma_density(
 # ---------------------------------------------------------------------------
 # Step 3 - Sheath / self-bias, ion flux and ion bombardment energy  [FE-1.2.3]
 # ---------------------------------------------------------------------------
+@dataclass
+class SheathState:
+    """Collisionless (Child-Langmuir) sheath state at the driven electrode.
+
+    `mean_sheath_voltage_v` is the time-averaged potential the ions fall through
+    (it sets the ion bombardment energy). `thickness_m` is the Child-Langmuir
+    sheath width computed from the rigorous plasma density. The two boolean flags
+    report whether the sheath is actually in the regime the Child-Langmuir law
+    assumes, so the model can honestly say when its own sheath treatment applies:
+      * is_collisionless - sheath thinner than an ion mean free path (else ions
+        collide while crossing and the collisionless Child law is inaccurate).
+      * is_high_voltage  - mean sheath voltage exceeds ~5*Te (else it is a low-
+        voltage Debye-scale sheath, not a Child-Langmuir matrix sheath).
+    """
+    mean_sheath_voltage_v: float
+    thickness_m: float
+    is_collisionless: bool
+    is_high_voltage: bool
+
+
+def child_langmuir_sheath(
+    rf_voltage_v: float,
+    te_v: float,
+    n_e: float,
+    pressure_mtorr: float,
+    geometry: ChamberGeometry = DEFAULT_GEOMETRY,
+) -> SheathState:
+    """Solve the collisionless Child-Langmuir sheath for a given RF drive voltage.
+
+    This is the physically DETERMINED sheath (contrast `_estimated_rf_bias_voltage`):
+    once the independent RF voltage amplitude is supplied, the sheath is no longer
+    under-determined and every quantity below follows from the RF drive and the
+    rigorously solved plasma density n_e.
+
+      * mean sheath voltage:  V_mean = V_floating + RF_MEAN_SHEATH_FRACTION * V_rf.
+        The floating term is the intrinsic minimum drop (recovered as V_rf -> 0);
+        the RF term is the time-averaged contribution of the driven sheath.
+
+      * thickness: the Child-Langmuir law relates the (Bohm) ion current density
+        crossing a collisionless high-voltage sheath to its voltage and width:
+
+            J_i = (4/9) * eps0 * sqrt(2e/M) * V_mean^(3/2) / s^2       (L&L 11.2)
+
+        with J_i = e * h_l * n_e * u_B (the Bohm ion current into the sheath).
+        Solving for s uses the rigorous n_e, so a denser plasma (e.g. from higher
+        absorbed power) gives a thinner sheath. This is where n_e does real work:
+        the sheath structure is coupled to the plasma the power balance produced.
+
+    Regime validity is reported rather than assumed, matching the model's honest
+    treatment of its own limitations (LI-1).
+    """
+    if rf_voltage_v < 0.0:
+        raise ValueError("rf_voltage_v must be non-negative.")
+
+    n_g, h_l, _h_r, _volume, _area = _discharge_geometry_factors(pressure_mtorr, geometry)
+    u_b = bohm_velocity(te_v)
+
+    v_floating = FLOATING_SHEATH_COEFF * te_v
+    mean_sheath_voltage = v_floating + RF_MEAN_SHEATH_FRACTION * rf_voltage_v
+
+    # Child-Langmuir collisionless sheath thickness from the Bohm ion current.
+    ion_current_density = ELEM_CHARGE * h_l * n_e * u_b
+    child_constant = (4.0 / 9.0) * EPS0 * math.sqrt(2.0 * ELEM_CHARGE / ARGON_MASS)
+    thickness = math.sqrt(child_constant * mean_sheath_voltage**1.5 / ion_current_density)
+
+    lambda_i = ion_mean_free_path(n_g)
+    return SheathState(
+        mean_sheath_voltage_v=mean_sheath_voltage,
+        thickness_m=thickness,
+        is_collisionless=thickness < lambda_i,
+        is_high_voltage=mean_sheath_voltage > 5.0 * te_v,
+    )
+
+
+def _estimated_rf_bias_voltage(ion_flux: float, te_v: float, n_e: float) -> float:
+    """FALLBACK RF self-bias estimate used only when no RF voltage is supplied.
+
+    Treats the sheath as a linear capacitor of thickness s0 = SHEATH_DEBYE_MULTIPLIER
+    * lambda_D driven by the ion current density e*ion_flux at the fixed 13.56 MHz
+    drive: V = I/(omega*C) = e*ion_flux*s0/(eps0*omega). This implicitly assumes the
+    RF current tracks the ion flux (hence grows with density/power), so the estimate
+    scales ~ sqrt(P_abs). It is an order-of-magnitude stand-in with one documented,
+    somewhat arbitrary length constant (SHEATH_DEBYE_MULTIPLIER) - which is exactly
+    why supplying rf_voltage_v (-> child_langmuir_sheath) is the preferred, fully
+    determined path. Kept so the (power, pressure)-only interface still returns a
+    power-dependent sheath.
+    """
+    sheath_thickness = SHEATH_DEBYE_MULTIPLIER * debye_length(te_v, n_e)
+    current_density = ELEM_CHARGE * ion_flux
+    return current_density * sheath_thickness / (EPS0 * RF_ANGULAR_FREQUENCY)
+
+
 def sheath_and_ion_energy(
     absorbed_power_w: float,
     te_v: float,
     n_e: float,
     pressure_mtorr: float,
     geometry: ChamberGeometry = DEFAULT_GEOMETRY,
+    rf_voltage_v: Optional[float] = None,
 ) -> tuple[float, float, float]:
     """Ion flux to the electrode, mean sheath voltage, and ion bombardment energy.
 
     Returns (ion_flux [m^-2 s^-1], sheath_voltage [V], ion_energy [eV]).
 
-    The sheath voltage is the sum of two independent physical contributions. (An
-    earlier version of this function estimated sheath voltage as a single
-    expression V_s = P_abs / (e * n_e * u_B * A_eff) - but because n_e was ITSELF
-    solved from the same P_abs via the power balance, P_abs cancelled out exactly
-    and the result collapsed to a power-independent value by algebraic accident,
-    not physics. The fix below replaces that with two additive terms that are each
-    independently motivated and verified not to degenerate the same way.)
+      * ion_flux = h_l * n_e * u_B - flux of ions to the powered electrode, using
+        the sheath-edge density h_l*n_e. A rigorous consequence of Te and n_e.
 
-      * ion_flux = h_l * n_e * u_B  - the flux of ions arriving at the powered
-        electrode, using the sheath-edge density h_l*n_e. A rigorous consequence
-        of Te and n_e; drives reactivity, etch rate, and the RF bias term below.
+      * sheath_voltage - depends on whether an RF drive was supplied:
+          - rf_voltage_v given -> the physically DETERMINED Child-Langmuir sheath
+            (`child_langmuir_sheath`): mean sheath voltage from the RF drive plus
+            the intrinsic floating potential.
+          - rf_voltage_v None   -> the FALLBACK estimate (`_estimated_rf_bias_voltage`)
+            added to the floating potential, so the two-input interface still yields
+            a power-dependent sheath. Clearly labelled as an estimate.
 
-      * v_floating = FLOATING_SHEATH_COEFF * Te  - the basic DC/ambipolar sheath
-        drop every plasma-facing wall develops, present even with no RF drive.
-        Power-independent by genuine physics (it depends only on Te), not by
-        algebraic accident.
+      * ion_energy = sheath_voltage + 0.5*Te (presheath energy the ion carries on
+        top of the sheath drop).
 
-      * v_rf_bias - the ADDITIONAL sheath voltage from the RF drive itself: the
-        mechanism FE-1.2.3 calls for as "the mechanism that distinguishes
-        capacitive from inductive discharges." Modelled as a linear-capacitor
-        estimate: treat the sheath as a parallel-plate capacitor of thickness
-        s0 = SHEATH_DEBYE_MULTIPLIER * lambda_D (a documented multiple of the
-        Debye length, the natural sheath length scale). Driving the RF current
-        density e*ion_flux through it at the fixed CCP drive frequency requires a
-        voltage amplitude V = I / (omega * C) = e*ion_flux*s0 / (eps0*omega). This
-        is a simplified LINEAR approximation to the true nonlinear Child-law
-        matrix-sheath relation (L&L Sec. 11.2); a fully self-consistent capacitive
-        sheath is out of scope for a 0D model (LI-1). Because ion_flux (hence n_e)
-        grows linearly with absorbed power while s0 shrinks only as 1/sqrt(n_e),
-        this term grows roughly as sqrt(P_abs) - giving the power-controlled ion
-        energy that real CCPs are built to exploit, without adding RF voltage as
-        an extra user input (the drive frequency is fixed at 13.56 MHz, not tuned).
-
-      * sheath_voltage = v_floating + v_rf_bias; ion_energy = sheath_voltage +
-        0.5*Te (presheath energy the ion already carries on top of the sheath drop).
-
-    Neither term is fed back into the Te/n_e solve, so it cannot corrupt the
+    None of this is fed back into the Te/n_e solve, so it cannot corrupt the
     rigorous particle/power balance result.
     """
     _n_g, h_l, _h_r, _volume, _area = _discharge_geometry_factors(pressure_mtorr, geometry)
     u_b = bohm_velocity(te_v)
-
     ion_flux = h_l * n_e * u_b
 
-    v_floating = FLOATING_SHEATH_COEFF * te_v
+    if rf_voltage_v is None:
+        v_floating = FLOATING_SHEATH_COEFF * te_v
+        sheath_voltage = v_floating + _estimated_rf_bias_voltage(ion_flux, te_v, n_e)
+    else:
+        sheath = child_langmuir_sheath(rf_voltage_v, te_v, n_e, pressure_mtorr, geometry)
+        sheath_voltage = sheath.mean_sheath_voltage_v
 
-    sheath_thickness = SHEATH_DEBYE_MULTIPLIER * debye_length(te_v, n_e)
-    current_density = ELEM_CHARGE * ion_flux
-    v_rf_bias = current_density * sheath_thickness / (EPS0 * RF_ANGULAR_FREQUENCY)
-
-    sheath_voltage = v_floating + v_rf_bias
     ion_energy = sheath_voltage + 0.5 * te_v
     return ion_flux, sheath_voltage, ion_energy
+
+
+def implied_ion_power_w(
+    sheath_voltage_v: float,
+    ion_flux_m2s: float,
+    geometry: ChamberGeometry = DEFAULT_GEOMETRY,
+) -> float:
+    """Power carried by ions accelerated into the two electrodes [W].
+
+    P_ion = e * V_sheath * ion_flux * (2 * pi * R^2), i.e. every ion crossing each
+    electrode sheath delivers e*V_sheath of energy. Provided as a physical
+    CONSISTENCY CHECK for a user-supplied RF voltage: if this exceeds the absorbed
+    RF power, the chosen drive is accelerating more ion power than the discharge
+    actually absorbs, i.e. the RF voltage and the power are mutually inconsistent.
+    The dashboard / validation layer can warn on that (see Sub-Module 1.1's
+    physics-grounded validation pattern).
+    """
+    electrode_area = 2.0 * math.pi * geometry.radius_m**2
+    return ELEM_CHARGE * sheath_voltage_v * ion_flux_m2s * electrode_area
 
 
 # ---------------------------------------------------------------------------
@@ -601,6 +713,7 @@ def simulate(
     noise_level: float = 0.0,
     seed: Optional[int] = None,
     geometry: ChamberGeometry = DEFAULT_GEOMETRY,
+    rf_voltage_v: Optional[float] = None,
 ) -> SimulationResult:
     """Run the full 0D global-model simulation for one operating point.
 
@@ -612,6 +725,11 @@ def simulate(
         seed:           RNG seed making a noisy run reproducible. Ignored when
                         noise_level == 0 (that path is deterministic anyway).
         geometry:       chamber geometry; defaults to the standard educational reactor.
+        rf_voltage_v:   optional peak RF voltage amplitude [V]. When supplied, the
+                        driven-electrode sheath is computed from the Child-Langmuir
+                        law (physically determined); when None, a labelled fallback
+                        estimate is used. See the module docstring for why this third
+                        input is needed to determine the sheath at all.
 
     Returns:
         SimulationResult with the full output vector. Electron temperature and plasma
@@ -631,7 +749,7 @@ def simulate(
 
     # (3) sheath physics: ion flux, sheath voltage, ion bombardment energy.
     ion_flux, sheath_voltage, ion_energy = sheath_and_ion_energy(
-        rf_power_w, te_v, n_e, pressure_mtorr, geometry
+        rf_power_w, te_v, n_e, pressure_mtorr, geometry, rf_voltage_v=rf_voltage_v
     )
 
     # (4) illustrative engineering indices from the rigorous physics.

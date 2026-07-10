@@ -13,8 +13,11 @@ import pytest
 from digital_twin.physics_engine import (
     DEFAULT_GEOMETRY,
     FLOATING_SHEATH_COEFF,
+    RF_MEAN_SHEATH_FRACTION,
     bohm_velocity,
+    child_langmuir_sheath,
     debye_length,
+    implied_ion_power_w,
     ionization_rate_coeff,
     gas_density,
     chamber_volume,
@@ -169,6 +172,116 @@ def test_debye_length_shrinks_with_density() -> None:
     """Sanity check on the Debye-length helper: denser plasma screens faster."""
     te = 4.0
     assert debye_length(te, 1e17) < debye_length(te, 1e16)
+
+
+# ---------------------------------------------------------------------------
+# Child-Langmuir sheath: the physically-determined driven-electrode sheath that
+# resolves the (power, pressure) under-determination by taking an independent RF
+# voltage drive (FE-1.2.3, "Option C").
+# ---------------------------------------------------------------------------
+def _te_ne(power, pressure):
+    te = solve_electron_temperature(pressure)
+    ne = solve_plasma_density(power, te, pressure)
+    return te, ne
+
+
+def test_child_langmuir_mean_voltage_reduces_to_floating_at_zero_drive() -> None:
+    """With no RF drive, the mean sheath voltage is just the floating potential."""
+    te, ne = _te_ne(100.0, 10.0)
+    sheath = child_langmuir_sheath(0.0, te, ne, 10.0)
+    assert sheath.mean_sheath_voltage_v == pytest.approx(FLOATING_SHEATH_COEFF * te)
+
+
+def test_child_langmuir_mean_voltage_tracks_rf_fraction() -> None:
+    """Mean sheath voltage = floating + RF_MEAN_SHEATH_FRACTION * V_rf."""
+    te, ne = _te_ne(100.0, 10.0)
+    v_rf = 200.0
+    sheath = child_langmuir_sheath(v_rf, te, ne, 10.0)
+    expected = FLOATING_SHEATH_COEFF * te + RF_MEAN_SHEATH_FRACTION * v_rf
+    assert sheath.mean_sheath_voltage_v == pytest.approx(expected)
+
+
+def test_child_langmuir_ion_energy_increases_with_rf_voltage() -> None:
+    energies = [simulate(100.0, 10.0, rf_voltage_v=v).ion_energy_ev for v in (50.0, 150.0, 300.0, 600.0)]
+    for lower, higher in zip(energies, energies[1:]):
+        assert higher > lower
+
+
+def test_child_langmuir_thickness_positive_and_shrinks_with_density() -> None:
+    """Denser plasma (from higher power) => thinner Child-Langmuir sheath."""
+    te = solve_electron_temperature(10.0)
+    thicknesses = []
+    for power in POWERS_W:
+        ne = solve_plasma_density(power, te, 10.0)
+        sheath = child_langmuir_sheath(300.0, te, ne, 10.0)
+        assert sheath.thickness_m > 0.0
+        thicknesses.append(sheath.thickness_m)
+    for thicker, thinner in zip(thicknesses, thicknesses[1:]):
+        assert thinner < thicker
+
+
+def test_child_langmuir_high_voltage_flag() -> None:
+    te, ne = _te_ne(100.0, 10.0)
+    assert child_langmuir_sheath(0.0, te, ne, 10.0).is_high_voltage is False
+    assert child_langmuir_sheath(400.0, te, ne, 10.0).is_high_voltage is True
+
+
+def test_child_langmuir_collisionless_in_low_pressure_regime() -> None:
+    """At low pressure the sheath is thinner than an ion mfp - the Child-Langmuir
+    collisionless treatment is valid there."""
+    for power in POWERS_W:
+        for pressure in (1.0, 5.0, 10.0):
+            te, ne = _te_ne(power, pressure)
+            assert child_langmuir_sheath(300.0, te, ne, pressure).is_collisionless
+
+
+def test_child_langmuir_flags_collisional_regime_at_high_pressure_low_power() -> None:
+    """The whole value of reporting the flag: at the high-pressure / low-power
+    corner under strong drive, the sheath grows thicker than an ion mfp and the
+    collisionless Child law no longer strictly applies - the model says so honestly
+    rather than silently returning a number outside its own validity."""
+    te, ne = _te_ne(50.0, 20.0)
+    assert child_langmuir_sheath(300.0, te, ne, 20.0).is_collisionless is False
+
+
+def test_child_langmuir_negative_voltage_raises() -> None:
+    te, ne = _te_ne(100.0, 10.0)
+    with pytest.raises(ValueError):
+        child_langmuir_sheath(-10.0, te, ne, 10.0)
+
+
+def test_simulate_rf_voltage_changes_ion_energy_vs_default() -> None:
+    default = simulate(100.0, 10.0)
+    driven = simulate(100.0, 10.0, rf_voltage_v=300.0)
+    assert driven.ion_energy_ev > default.ion_energy_ev
+
+
+def test_simulate_default_path_unchanged_by_option_c() -> None:
+    """Regression: rf_voltage_v=None must reproduce the fallback estimate exactly,
+    so Sub-Modules 1.1/1.4/1.5 (which call simulate without a voltage) are unaffected."""
+    explicit_none = simulate(120.0, 7.0, rf_voltage_v=None)
+    positional = simulate(120.0, 7.0)
+    assert explicit_none.to_dict() == positional.to_dict()
+
+
+def test_implied_ion_power_increases_with_rf_voltage() -> None:
+    te, ne = _te_ne(100.0, 10.0)
+    _flux, _sv, _ie = sheath_and_ion_energy(100.0, te, ne, 10.0, rf_voltage_v=100.0)
+    powers = []
+    for v in (50.0, 150.0, 300.0):
+        flux, sheath_v, _ = sheath_and_ion_energy(100.0, te, ne, 10.0, rf_voltage_v=v)
+        powers.append(implied_ion_power_w(sheath_v, flux))
+    for lower, higher in zip(powers, powers[1:]):
+        assert higher > lower
+
+
+def test_implied_ion_power_flags_overdrive() -> None:
+    """A large RF voltage at modest power implies more ion power than is absorbed -
+    the consistency check the validation layer uses to catch an over-driven sheath."""
+    absorbed = 100.0
+    te, ne = _te_ne(absorbed, 10.0)
+    flux, sheath_v, _ = sheath_and_ion_energy(absorbed, te, ne, 10.0, rf_voltage_v=400.0)
+    assert implied_ion_power_w(sheath_v, flux) > absorbed
 
 
 # ---------------------------------------------------------------------------

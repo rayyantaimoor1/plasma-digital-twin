@@ -57,9 +57,10 @@ pytest
 - **Sub-Module 1.2** — 0D global discharge physics engine
   ([`digital_twin/physics_engine.py`](digital_twin/physics_engine.py)). Done.
   Particle balance solves for electron temperature via `scipy.optimize.brentq`; power
-  balance solves for plasma density; sheath model adds a power-dependent RF
-  self-bias voltage on top of the DC floating sheath. Run it standalone with
-  `python digital_twin/physics_engine.py` to see a sample sweep.
+  balance solves for plasma density. The driven-electrode sheath is computed from the
+  collisionless Child–Langmuir law when an RF voltage is supplied
+  (`simulate(..., rf_voltage_v=...)`), and falls back to a labelled estimate otherwise.
+  Run it standalone with `python digital_twin/physics_engine.py` to see a sample sweep.
 - **Sub-Module 1.1** — chamber parameter configuration engine
   ([`digital_twin/chamber_config.py`](digital_twin/chamber_config.py)). Done.
   Parameter ranges, three experiment mode presets (Stable Plasma / Exploratory
