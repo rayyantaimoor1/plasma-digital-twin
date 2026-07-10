@@ -66,6 +66,23 @@ ARGON_MASS = 39.948 * AMU          # argon ion mass M [kg]
 
 MTORR_TO_PA = 0.13332236842        # 1 mTorr expressed in pascals
 
+# Standard CCP drive frequency: 13.56 MHz, the near-universal ISM-band frequency
+# used by essentially all industrial and research capacitive plasma reactors
+# (Lieberman & Lichtenberg use it as their worked example throughout Ch. 11).
+# Fixed, citable engineering constant - not a free/tunable input, since the
+# platform does not expose RF frequency as a user parameter.
+RF_FREQUENCY_HZ = 13.56e6
+RF_ANGULAR_FREQUENCY = 2.0 * math.pi * RF_FREQUENCY_HZ
+
+# Floating (DC/ambipolar) sheath potential coefficient for argon:
+#     V_f = (Te/2) * ln(M / (2*pi*m_e))                    [L&L eq. 2.4.20]
+# i.e. how far below the plasma potential a wall must float so the (much faster)
+# random thermal electron flux exactly balances the slower Bohm ion flux. Computed
+# once here so every place that needs it (power-balance bookkeeping AND the sheath/
+# ion-energy model below) uses the same self-consistent value, rather than two
+# independently hand-picked numbers.
+FLOATING_SHEATH_COEFF = 0.5 * math.log(ARGON_MASS / (2.0 * math.pi * ELECTRON_MASS))
+
 # ---------------------------------------------------------------------------
 # Argon atomic / collision data.
 # These are INPUTS from measured cross-section data (Lieberman & Lichtenberg,
@@ -86,8 +103,20 @@ REACTIVITY_REF_FLUX = 1.0e20       # reference ion flux [m^-2 s^-1] -> reactivit
 UNIFORMITY_HR_REF = 0.5            # radial edge-to-center ratio treated as "flat" (U=1)
 ETCH_ENERGY_THRESHOLD = 16.0       # ion-energy threshold for etching/sputtering [eV]
 ETCH_SCALE = 2.0e-19               # scales flux*sqrt(eV) to ~nm/min (illustrative)
-DEFECT_ENERGY_CENTER = 200.0       # ion energy at which damage risk crosses 0.5 [eV]
-DEFECT_ENERGY_WIDTH = 80.0         # softness of the damage-onset transition [eV]
+
+# Sheath-to-Debye-length ratio used by the RF self-bias estimate in
+# sheath_and_ion_energy(). Real matrix sheaths run roughly 10-100 Debye lengths
+# thick depending on V_s/Te (Child-law scaling s_m/lambda_D ~ sqrt(2)*(V0/Te)^0.75);
+# 20 is a round, mid-range, documented choice, not fit to any target output.
+SHEATH_DEBYE_MULTIPLIER = 20.0
+
+# Ion energy at which damage risk crosses 0.5, and the transition softness [eV].
+# Calibrated to the corrected sheath model's operating-envelope range of ion
+# bombardment energies (roughly 18-90 eV across 50-300 W, 1-20 mTorr): centered in
+# the upper-middle of that range so both the gentlest and most aggressive corners
+# of the envelope produce visibly different, non-saturated defect probabilities.
+DEFECT_ENERGY_CENTER = 55.0
+DEFECT_ENERGY_WIDTH = 25.0
 
 
 @dataclass(frozen=True)
@@ -216,6 +245,16 @@ def bohm_velocity(te_v: float) -> float:
     return math.sqrt(ELEM_CHARGE * te_v / ARGON_MASS)
 
 
+def debye_length(te_v: float, n_e: float) -> float:
+    """Electron Debye length lambda_D = sqrt(eps0*Te / (e*n_e)) [m].
+
+    The natural electrostatic screening length of the plasma; sets the length
+    scale for how thick a space-charge sheath can be (used below to estimate the
+    RF self-bias sheath voltage).
+    """
+    return math.sqrt(EPS0 * te_v / (ELEM_CHARGE * n_e))
+
+
 def gas_density(pressure_mtorr: float, gas_temp_k: float) -> float:
     """Neutral argon density n_g from the ideal gas law [m^-3].
 
@@ -338,21 +377,26 @@ def solve_electron_temperature(
 def total_energy_per_pair(te_v: float) -> float:
     """Total energy lost from the discharge per electron-ion pair, E_T(Te) [V].
 
-    E_T = E_c(Te) + 2*Te + 5.2*Te
+    E_T = E_c(Te) + 2*Te + (FLOATING_SHEATH_COEFF + 0.5)*Te
           collisional  electrons  ions
 
       * E_c(Te)  - collisional (ionization + excitation) loss, from above.
       * 2*Te     - mean kinetic energy carried off by each Maxwellian electron
                    that reaches a wall.
-      * 5.2*Te   - kinetic energy each ion carries to a wall in argon: it gains
-                   ~0.5*Te in the presheath and falls through the ~4.7*Te floating
-                   sheath potential  V_f = (Te/2) ln(M / (2 pi m_e)).  For argon
-                   (Te/2) ln(M/2 pi m_e) ~ 4.7*Te, giving ~5.2*Te total. This is the
-                   standard global-model wall closure; the much larger *driven-
-                   electrode* sheath voltage relevant to etching is estimated
-                   separately in `sheath_and_ion_energy` (FE-1.2.3).
+      * (FLOATING_SHEATH_COEFF + 0.5)*Te - kinetic energy each ion carries to a
+                   wall via the basic DC/ambipolar (non-driven) sheath: ~0.5*Te
+                   gained in the presheath, plus FLOATING_SHEATH_COEFF*Te (~4.68*Te
+                   for argon) falling through the floating sheath potential
+                   V_f = (Te/2) ln(M / 2 pi m_e). This is the standard global-model
+                   wall-energy closure used here for POWER BALANCE BOOKKEEPING -
+                   i.e. how much energy the discharge must supply per ion produced.
+
+    That is a different question from "how energetic is an ion when it strikes the
+    powered electrode" - the latter also picks up the power-dependent RF self-bias
+    voltage, computed separately in `sheath_and_ion_energy` (FE-1.2.3), which is
+    NOT fed back into this function or into the density solve.
     """
-    return collisional_energy_loss(te_v) + 2.0 * te_v + 5.2 * te_v
+    return collisional_energy_loss(te_v) + 2.0 * te_v + (FLOATING_SHEATH_COEFF + 0.5) * te_v
 
 
 def solve_plasma_density(
@@ -402,30 +446,57 @@ def sheath_and_ion_energy(
 
     Returns (ion_flux [m^-2 s^-1], sheath_voltage [V], ion_energy [eV]).
 
+    The sheath voltage is the sum of two independent physical contributions. (An
+    earlier version of this function estimated sheath voltage as a single
+    expression V_s = P_abs / (e * n_e * u_B * A_eff) - but because n_e was ITSELF
+    solved from the same P_abs via the power balance, P_abs cancelled out exactly
+    and the result collapsed to a power-independent value by algebraic accident,
+    not physics. The fix below replaces that with two additive terms that are each
+    independently motivated and verified not to degenerate the same way.)
+
       * ion_flux = h_l * n_e * u_B  - the flux of ions arriving at the powered
-        electrode, using the sheath-edge density h_l*n_e. This is a rigorous
-        consequence of Te and n_e and drives reactivity and etch rate.
+        electrode, using the sheath-edge density h_l*n_e. A rigorous consequence
+        of Te and n_e; drives reactivity, etch rate, and the RF bias term below.
 
-      * sheath_voltage - estimated from an ion power balance: at low pressure most
-        of the RF power is dissipated by ions accelerating through the sheaths, so
-            V_s ~ P_abs / ( e * n_e * u_B * A_eff ).
-        This is a documented order-of-magnitude ESTIMATE of the mean sheath voltage,
-        NOT a self-consistent RF-sheath solution (which would need the applied RF
-        voltage, an input the platform does not take). It is deliberately not fed
-        back into the density solve, so it cannot corrupt the rigorous Te/n_e result.
-        A fully self-consistent capacitive sheath is out of scope (LI-1).
+      * v_floating = FLOATING_SHEATH_COEFF * Te  - the basic DC/ambipolar sheath
+        drop every plasma-facing wall develops, present even with no RF drive.
+        Power-independent by genuine physics (it depends only on Te), not by
+        algebraic accident.
 
-      * ion_energy = V_s + 0.5*Te - the sheath drop plus the presheath energy the
-        ion already carries; this is the energy with which ions bombard the wafer.
+      * v_rf_bias - the ADDITIONAL sheath voltage from the RF drive itself: the
+        mechanism FE-1.2.3 calls for as "the mechanism that distinguishes
+        capacitive from inductive discharges." Modelled as a linear-capacitor
+        estimate: treat the sheath as a parallel-plate capacitor of thickness
+        s0 = SHEATH_DEBYE_MULTIPLIER * lambda_D (a documented multiple of the
+        Debye length, the natural sheath length scale). Driving the RF current
+        density e*ion_flux through it at the fixed CCP drive frequency requires a
+        voltage amplitude V = I / (omega * C) = e*ion_flux*s0 / (eps0*omega). This
+        is a simplified LINEAR approximation to the true nonlinear Child-law
+        matrix-sheath relation (L&L Sec. 11.2); a fully self-consistent capacitive
+        sheath is out of scope for a 0D model (LI-1). Because ion_flux (hence n_e)
+        grows linearly with absorbed power while s0 shrinks only as 1/sqrt(n_e),
+        this term grows roughly as sqrt(P_abs) - giving the power-controlled ion
+        energy that real CCPs are built to exploit, without adding RF voltage as
+        an extra user input (the drive frequency is fixed at 13.56 MHz, not tuned).
+
+      * sheath_voltage = v_floating + v_rf_bias; ion_energy = sheath_voltage +
+        0.5*Te (presheath energy the ion already carries on top of the sheath drop).
+
+    Neither term is fed back into the Te/n_e solve, so it cannot corrupt the
+    rigorous particle/power balance result.
     """
-    _n_g, h_l, _h_r, _volume, area = _discharge_geometry_factors(pressure_mtorr, geometry)
+    _n_g, h_l, _h_r, _volume, _area = _discharge_geometry_factors(pressure_mtorr, geometry)
     u_b = bohm_velocity(te_v)
 
     ion_flux = h_l * n_e * u_b
 
-    # Total ion loss rate to all surfaces (h factors are already inside A_eff).
-    ion_loss_rate = n_e * u_b * area
-    sheath_voltage = absorbed_power_w / (ELEM_CHARGE * ion_loss_rate)
+    v_floating = FLOATING_SHEATH_COEFF * te_v
+
+    sheath_thickness = SHEATH_DEBYE_MULTIPLIER * debye_length(te_v, n_e)
+    current_density = ELEM_CHARGE * ion_flux
+    v_rf_bias = current_density * sheath_thickness / (EPS0 * RF_ANGULAR_FREQUENCY)
+
+    sheath_voltage = v_floating + v_rf_bias
     ion_energy = sheath_voltage + 0.5 * te_v
     return ion_flux, sheath_voltage, ion_energy
 

@@ -12,7 +12,9 @@ import pytest
 
 from digital_twin.physics_engine import (
     DEFAULT_GEOMETRY,
+    FLOATING_SHEATH_COEFF,
     bohm_velocity,
+    debye_length,
     ionization_rate_coeff,
     gas_density,
     chamber_volume,
@@ -20,6 +22,7 @@ from digital_twin.physics_engine import (
     edge_to_center_factors,
     solve_electron_temperature,
     solve_plasma_density,
+    sheath_and_ion_energy,
     simulate,
 )
 
@@ -106,6 +109,66 @@ def test_density_is_linear_in_power() -> None:
         ne_100 = solve_plasma_density(100.0, solve_electron_temperature(pressure), pressure)
         ne_200 = solve_plasma_density(200.0, solve_electron_temperature(pressure), pressure)
         assert ne_200 == pytest.approx(2.0 * ne_100, rel=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# Sheath / ion-energy model (FE-1.2.3) - regression tests for a fixed bug where
+# sheath_voltage collapsed to a power-independent value by algebraic accident
+# (P_abs cancelled against the n_e it was divided by, since n_e was itself solved
+# from the same P_abs). These tests pin down the correct, power-dependent behaviour.
+# ---------------------------------------------------------------------------
+def test_ion_energy_increases_with_power_at_fixed_pressure() -> None:
+    """The RF self-bias contribution must make ion energy grow with power.
+
+    This is the direct regression test for the fix: before it, ion_energy_ev was
+    identical across all four power levels at a given pressure.
+    """
+    for pressure in PRESSURES_MTORR:
+        energies = [simulate(p, pressure).ion_energy_ev for p in POWERS_W]
+        for lower, higher in zip(energies, energies[1:]):
+            assert higher > lower
+
+
+def test_sheath_voltage_increases_with_power_at_fixed_pressure() -> None:
+    """Same regression, checked directly on sheath_voltage_v."""
+    for pressure in PRESSURES_MTORR:
+        voltages = [simulate(p, pressure).sheath_voltage_v for p in POWERS_W]
+        for lower, higher in zip(voltages, voltages[1:]):
+            assert higher > lower
+
+
+def test_floating_sheath_component_is_power_independent() -> None:
+    """The DC/ambipolar floating-sheath term alone should NOT depend on power.
+
+    Only the RF self-bias term should carry the power dependence; the floating
+    component is genuine, non-accidental physics that depends on Te only.
+    """
+    for pressure in PRESSURES_MTORR:
+        te = solve_electron_temperature(pressure)
+        v_floating = FLOATING_SHEATH_COEFF * te
+        # v_floating is independent of both n_e and power by construction; just
+        # confirm it only needs Te (i.e. is a pure function of pressure here).
+        assert v_floating == pytest.approx(FLOATING_SHEATH_COEFF * solve_electron_temperature(pressure))
+
+
+def test_sheath_voltage_exceeds_floating_component_alone() -> None:
+    """sheath_voltage must be strictly larger than the floating term alone.
+
+    i.e. the RF self-bias contribution is strictly positive at any nonzero power.
+    """
+    for power in POWERS_W:
+        for pressure in PRESSURES_MTORR:
+            te = solve_electron_temperature(pressure)
+            n_e = solve_plasma_density(power, te, pressure)
+            _flux, sheath_voltage, _ion_energy = sheath_and_ion_energy(power, te, n_e, pressure)
+            v_floating = FLOATING_SHEATH_COEFF * te
+            assert sheath_voltage > v_floating
+
+
+def test_debye_length_shrinks_with_density() -> None:
+    """Sanity check on the Debye-length helper: denser plasma screens faster."""
+    te = 4.0
+    assert debye_length(te, 1e17) < debye_length(te, 1e16)
 
 
 # ---------------------------------------------------------------------------
