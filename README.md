@@ -57,8 +57,22 @@ pytest
 - **Sub-Module 1.2** — 0D global discharge physics engine
   ([`digital_twin/physics_engine.py`](digital_twin/physics_engine.py)). Done.
   Particle balance solves for electron temperature via `scipy.optimize.brentq`; power
-  balance solves for plasma density. Run it standalone with
+  balance solves for plasma density; sheath model adds a power-dependent RF
+  self-bias voltage on top of the DC floating sheath. Run it standalone with
   `python digital_twin/physics_engine.py` to see a sample sweep.
+- **Sub-Module 1.1** — chamber parameter configuration engine
+  ([`digital_twin/chamber_config.py`](digital_twin/chamber_config.py)). Done.
+  Parameter ranges, three experiment mode presets (Stable Plasma / Exploratory
+  Sweep / Stress Test), and physics-grounded validation.
+- **Sub-Module 1.4** — multi-session experiment management
+  ([`digital_twin/session_manager.py`](digital_twin/session_manager.py)). Done.
+  SQLite-backed session persistence, retrieval, up-to-5 overlay comparison, and
+  summary reports.
+- **Sub-Module 1.5** — parameter sensitivity and sweep analysis
+  ([`digital_twin/sensitivity_analysis.py`](digital_twin/sensitivity_analysis.py)). Done.
+  One-at-a-time sweeps, sensitivity ranking, and Plotly figures (bar chart, effect
+  curves, paired-sweep heatmap).
 
 See [`CLAUDE.md`](CLAUDE.md) for the full module build order and non-negotiable technical
-principles — read it before starting any new module.
+principles — read it before starting any new module. Sub-Module 1.3 (synthetic dataset
+generation with hidden confounders) remains, ahead of 1.6 (physics validation).
