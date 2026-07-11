@@ -87,6 +87,19 @@ pytest
   (5/7 checks currently pass; 2 fail and are reported as such, not hidden). Run
   `python -m digital_twin.physics_validation` to see the full benchmark report.
 
-Phase 1 (Digital Twin) is now complete. Next: Phase 2 (AI Module), starting with
-Sub-Module 2.1. See [`CLAUDE.md`](CLAUDE.md) for the full module build order and
-non-negotiable technical principles — read it before starting any new module.
+Phase 1 (Digital Twin) is complete. Phase 2 (AI Module) in progress:
+
+- **Sub-Module 2.1** — plasma process suitability classification engine
+  ([`ai_module/classification.py`](ai_module/classification.py)). Done.
+  Random Forest and XGBoost benchmarked against a logistic-regression baseline,
+  with McNemar's exact test (`scipy.stats.binomtest`) reporting whether each
+  ensemble model is statistically significantly better than the baseline —
+  reported honestly per non-negotiable principle #3, whatever the result. On the
+  current dataset neither ensemble is significant (p > 0.05 on both splits) — a
+  real, reported outcome, not tuned to look better. Also: SHAP per-prediction and
+  global feature importance, side-by-side model comparison with agreement
+  flagging, and dual-split (region/random) evaluation per FE-1.3.5. Run
+  `python -m ai_module.classification` to see a full evaluation report.
+
+See [`CLAUDE.md`](CLAUDE.md) for the full module build order and non-negotiable
+technical principles — read it before starting any new module.
