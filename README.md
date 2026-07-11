@@ -101,5 +101,16 @@ Phase 1 (Digital Twin) is complete. Phase 2 (AI Module) in progress:
   flagging, and dual-split (region/random) evaluation per FE-1.3.5. Run
   `python -m ai_module.classification` to see a full evaluation report.
 
+- **Sub-Module 2.7** — AI model training, evaluation, and retraining interface
+  ([`ai_module/training.py`](ai_module/training.py)). Done.
+  Model registry (training params, dataset size, timestamp, metrics), stratified
+  k-fold cross-validation, a cross-model feature-importance comparison (same
+  SHAP-based measure for all three models, so the bars are actually comparable),
+  and MLflow local-file-store logging of every training run (`data/mlruns/`).
+  Retraining from accumulated stored datasets pulls from Sub-Module 1.3's dataset
+  storage specifically — not Sub-Module 1.4's session log, which lacks
+  confounder-based labels and would be circular to train on. Run
+  `python -m ai_module.training` to see a full training + cross-validation report.
+
 See [`CLAUDE.md`](CLAUDE.md) for the full module build order and non-negotiable
 technical principles — read it before starting any new module.
