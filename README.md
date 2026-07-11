@@ -79,7 +79,14 @@ pytest
   are withheld from the features (confounder strengths documented a priori in the module
   docstring). Soft quartile labelling, region + random splits, CSV export, SQLite storage.
   Run `python -m digital_twin.dataset_generation` to see the confounding in action.
+- **Sub-Module 1.6** — physics validation and literature benchmarking
+  ([`digital_twin/physics_validation.py`](digital_twin/physics_validation.py)). Done.
+  Benchmarks the physics engine against independently-sourced reference values (Turner,
+  2014, "Global Models" lecture — an argon global-model worked example cross-checked
+  against a PIC simulation), with stated tolerance bands and honest pass/fail reporting
+  (5/7 checks currently pass; 2 fail and are reported as such, not hidden). Run
+  `python -m digital_twin.physics_validation` to see the full benchmark report.
 
-See [`CLAUDE.md`](CLAUDE.md) for the full module build order and non-negotiable technical
-principles — read it before starting any new module. Remaining Phase 1 work: Sub-Module 1.6
-(physics validation against literature).
+Phase 1 (Digital Twin) is now complete. Next: Phase 2 (AI Module), starting with
+Sub-Module 2.1. See [`CLAUDE.md`](CLAUDE.md) for the full module build order and
+non-negotiable technical principles — read it before starting any new module.
