@@ -129,6 +129,14 @@ Phase 1 (Digital Twin) is complete. Phase 2 (AI Module) in progress:
   are detected on the smoothed series and annotated on the trend chart; summary
   statistics include a linear trend-direction coefficient. Run
   `python -m ai_module.trend_analysis` to see a synthetic session's detected events.
+- **Sub-Module 2.4** — multi-parameter correlation and relationship analysis
+  ([`ai_module/correlation_analysis.py`](ai_module/correlation_analysis.py)). Done.
+  Pearson correlation heatmap over the full simulation output vector, scatter +
+  regression for the three key relationships (power/reactivity, pressure/uniformity,
+  density/quality), Plotly parallel coordinates, and template-generated correlation
+  narration that flags the genuinely weak, physically-expected density-quality
+  relationship (r≈0.20, verified) alongside the strongest observed relationships.
+  Run `python -m ai_module.correlation_analysis` to see the narration output.
 
 See [`CLAUDE.md`](CLAUDE.md) for the full module build order and non-negotiable
 technical principles — read it before starting any new module.
