@@ -121,6 +121,14 @@ Phase 1 (Digital Twin) is complete. Phase 2 (AI Module) in progress:
   Includes severity levels, root-cause indication, SQLite event logging, an SPC
   control chart on process quality, and a Plotly anomaly timeline. Run
   `python -m ai_module.anomaly_detection` to see the detection-vs-range-check report.
+- **Sub-Module 2.3** — plasma trend analysis and monitoring engine
+  ([`ai_module/trend_analysis.py`](ai_module/trend_analysis.py)). Done.
+  Tracks reactivity, process quality, uniformity, and electron temperature across
+  sequential runs in a session; EMA smoothing separates systematic trend from
+  noise; degradation/recovery (monotonic run) and instability (oscillation) events
+  are detected on the smoothed series and annotated on the trend chart; summary
+  statistics include a linear trend-direction coefficient. Run
+  `python -m ai_module.trend_analysis` to see a synthetic session's detected events.
 
 See [`CLAUDE.md`](CLAUDE.md) for the full module build order and non-negotiable
 technical principles — read it before starting any new module.
