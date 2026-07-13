@@ -111,6 +111,16 @@ Phase 1 (Digital Twin) is complete. Phase 2 (AI Module) in progress:
   storage specifically — not Sub-Module 1.4's session log, which lacks
   confounder-based labels and would be circular to train on. Run
   `python -m ai_module.training` to see a full training + cross-validation report.
+- **Sub-Module 2.2** — real-time anomaly detection and process instability monitor
+  ([`ai_module/anomaly_detection.py`](ai_module/anomaly_detection.py)). Done.
+  Anomalies are physics-relationship violations, not out-of-range values (principle
+  #4): faults are injected as in-range points whose observed outputs are inconsistent
+  with the logged inputs, and Isolation Forest detects them on the physics RESIDUAL
+  (observed − digital-twin-predicted), not the raw features. Demonstrated contrast:
+  ~93% Isolation Forest recall vs ~0% for a naive range check on the same anomalies.
+  Includes severity levels, root-cause indication, SQLite event logging, an SPC
+  control chart on process quality, and a Plotly anomaly timeline. Run
+  `python -m ai_module.anomaly_detection` to see the detection-vs-range-check report.
 
 See [`CLAUDE.md`](CLAUDE.md) for the full module build order and non-negotiable
 technical principles — read it before starting any new module.
