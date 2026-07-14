@@ -151,6 +151,17 @@ Phase 1 (Digital Twin) is complete. Phase 2 (AI Module) in progress:
   Compliance scorecards, bootstrap confidence intervals on application-specific
   defect risk, and ranking of stored sessions by suitability. Run
   `python -m ai_module.suitability_analysis` to see the etching-vs-cleaning contrast.
+- **Sub-Module 2.6** — intelligent, counterfactual recommendation engine
+  ([`ai_module/recommendation_engine.py`](ai_module/recommendation_engine.py)). Done.
+  Every recommendation is counterfactual (principle #5): a best-practice rule layer
+  proposes candidate parameter adjustments, but each is re-run through the digital
+  twin and reported with its REAL predicted numeric outcome (e.g. "reduce chamber
+  pressure from 18 mTorr to 12.6 mTorr → process quality 0.209 → 0.226"), never
+  bare advisory text. Candidates are ranked by re-simulated quality gain, optionally
+  boosted by the classifier's predicted suitability-class transition; a SQLite
+  history log records each recommendation's predicted effect and can verify whether
+  an applied change delivered it. Run `python -m ai_module.recommendation_engine`
+  to see three quantified recommendations and a verification.
 
 See [`CLAUDE.md`](CLAUDE.md) for the full module build order and non-negotiable
 technical principles — read it before starting any new module.
