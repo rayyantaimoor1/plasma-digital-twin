@@ -137,6 +137,20 @@ Phase 1 (Digital Twin) is complete. Phase 2 (AI Module) in progress:
   narration that flags the genuinely weak, physically-expected density-quality
   relationship (r≈0.20, verified) alongside the strongest observed relationships.
   Run `python -m ai_module.correlation_analysis` to see the narration output.
+- **Sub-Module 2.5** — semiconductor process suitability analysis
+  ([`ai_module/suitability_analysis.py`](ai_module/suitability_analysis.py)). Done.
+  Maps ion bombardment energy to four application categories (cleaning, surface
+  treatment, thin-film deposition, plasma etching) via windows whose ORDERING is
+  cited to the plasma-processing literature consensus (cleaning < treatment ≈
+  deposition < etching in required ion energy — Lieberman & Lichtenberg Ch. 1);
+  the exact eV boundaries are openly-stated round calibrations, not misattributed
+  to false precision. Verified consequence: etching is essentially unreachable
+  without an applied RF voltage (9% suitable across the default envelope vs 63–86%
+  for the other three) — a genuine physical result, since real RIE tools are
+  distinguished from gentler CCP processes by their driven, biased sheath.
+  Compliance scorecards, bootstrap confidence intervals on application-specific
+  defect risk, and ranking of stored sessions by suitability. Run
+  `python -m ai_module.suitability_analysis` to see the etching-vs-cleaning contrast.
 
 See [`CLAUDE.md`](CLAUDE.md) for the full module build order and non-negotiable
 technical principles — read it before starting any new module.
