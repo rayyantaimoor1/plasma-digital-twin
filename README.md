@@ -45,10 +45,22 @@ source .venv/bin/activate     # macOS/Linux
 pip install -r requirements.txt
 ```
 
+## Running the dashboard
+
+```bash
+streamlit run dashboard/app.py
+```
+
+The first load trains the models and builds the conformal uncertainty layer once
+(cached thereafter). Set the operating point in the sidebar; the specialised panels
+(Digital Twin, AI Analytics, Anomaly Monitor, Trends & Correlation, Suitability &
+Recommendations, Session History, Model Training) are in the left-hand navigation.
+
 ## Running tests
 
 ```bash
-pytest
+pytest                 # full suite
+pytest -m "not dashboard"   # skip the slow Streamlit AppTest smoke tests
 ```
 
 ## Status
@@ -176,6 +188,17 @@ Phase 1 (Digital Twin) is complete. Phase 2 (AI Module) in progress:
   low-confidence with a 2-class set, while 280 W/1.5 mTorr gets a single-class,
   high-confidence call. Run `python -m ai_module.uncertainty_quantification` to
   see the coverage report and the trust-layer contrast.
+
+- **Phase 3 — Streamlit dashboard integration**
+  ([`dashboard/`](dashboard/)). Done.
+  A multipage Streamlit app wiring every Digital Twin (1.1–1.6) and AI (2.1–2.8)
+  sub-module into one interface: a shared chamber-configuration sidebar drives a
+  live control-room overview plus seven analysis panels (Digital Twin, AI Analytics,
+  Anomaly Monitor, Trends & Correlation, Suitability & Recommendations, Session
+  History, Model Training). Heavy work (dataset generation, model training, conformal
+  calibration) is cached so it runs once. Every page is smoke-tested via Streamlit's
+  `AppTest` harness (`tests/test_dashboard.py`), which runs each panel headless and
+  fails on any exception. Launch with `streamlit run dashboard/app.py`.
 
 See [`CLAUDE.md`](CLAUDE.md) for the full module build order and non-negotiable
 technical principles — read it before starting any new module.

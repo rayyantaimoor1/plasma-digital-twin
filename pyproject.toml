@@ -1,2 +1,5 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "dashboard: Streamlit dashboard smoke tests (slow; build cached models via AppTest)",
+]
