@@ -163,7 +163,9 @@ FEATURE_COLUMNS = [
 ]
 LABEL_COLUMN = "suitability"
 CONFOUNDER_COLUMNS = ["wall_temp_drift_k", "electrode_age", "gas_purity"]
-ANALYSIS_COLUMNS = ["nominal_process_quality", "true_process_quality"] + CONFOUNDER_COLUMNS
+ANALYSIS_COLUMNS = (
+    ["nominal_process_quality", "true_process_quality", "true_defect_probability"] + CONFOUNDER_COLUMNS
+)
 
 # Suitability classes, ascending in quality; index = quartile bucket 0..3.
 SUITABILITY_CLASSES = ["Unsuitable", "Marginal", "Acceptable", "Optimal"]
@@ -192,19 +194,28 @@ def _sample_gas_impurity(rng: np.random.Generator, cfg: ConfounderConfig) -> flo
     return float(np.clip(impurity, 0.0, cfg.gas_impurity_max))
 
 
-def _true_quality_with_confounders(
+def _confounded_outcomes(
     rf_power_w: float,
     pressure_mtorr: float,
     wall_temp_drift_k: float,
     electrode_age: float,
     gas_impurity: float,
     cfg: ConfounderConfig,
-) -> float:
-    """Process quality at the confounder-perturbed condition (the LABEL basis).
+) -> tuple[float, float]:
+    """(true_process_quality, true_defect_probability) at the confounder-perturbed
+    condition (the LABEL basis for FE-1.3.3, and the regression target used by
+    Sub-Module 2.8's defect-probability conformal predictor).
 
     Wall temperature and electrode aging act through the real physics (gas
     temperature and effective absorbed power); gas impurity is a documented
     external penalty (outside argon-only chemistry). See module docstring.
+
+    Both outcomes are read off the SAME confounded simulate() call, so they are
+    two views of one physically consistent perturbed condition, not independent
+    draws. defect_probability is NOT purity-penalised (the purity penalty is
+    specifically a process-quality effect - electronegative contamination
+    degrades the deposition/etch outcome quality, not the model's own ion-
+    bombardment-based damage estimate).
     """
     effective_gas_temp = BASE_GAS_TEMP_K + wall_temp_drift_k
     effective_power = rf_power_w * (1.0 - cfg.electrode_aging_max_coupling_loss * electrode_age)
@@ -212,7 +223,8 @@ def _true_quality_with_confounders(
 
     confounded = simulate(effective_power, pressure_mtorr, geometry=geometry)
     purity_penalty = 1.0 - cfg.gas_impurity_quality_sensitivity * gas_impurity
-    return float(np.clip(confounded.process_quality * max(0.0, purity_penalty), 0.0, 1.0))
+    true_quality = float(np.clip(confounded.process_quality * max(0.0, purity_penalty), 0.0, 1.0))
+    return true_quality, float(confounded.defect_probability)
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +278,7 @@ def generate_dataset(
                     float(power), float(pressure),
                     noise_level=cfg.feature_measurement_noise, seed=noise_seed,
                 )
-                true_quality = _true_quality_with_confounders(
+                true_quality, true_defect = _confounded_outcomes(
                     float(power), float(pressure), wall_temp, age, impurity, cfg
                 )
                 rows.append({
@@ -279,6 +291,7 @@ def generate_dataset(
                     "etch_rate_nm_min": measured.etch_rate_nm_min,
                     "nominal_process_quality": nominal.process_quality,
                     "true_process_quality": true_quality,
+                    "true_defect_probability": true_defect,
                     "wall_temp_drift_k": wall_temp,
                     "electrode_age": age,
                     "gas_purity": 1.0 - impurity,

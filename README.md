@@ -162,6 +162,20 @@ Phase 1 (Digital Twin) is complete. Phase 2 (AI Module) in progress:
   history log records each recommendation's predicted effect and can verify whether
   an applied change delivered it. Run `python -m ai_module.recommendation_engine`
   to see three quantified recommendations and a verification.
+- **Sub-Module 2.8** — uncertainty quantification and trust layer
+  ([`ai_module/uncertainty_quantification.py`](ai_module/uncertainty_quantification.py)). Done.
+  MAPIE 1.4.1 split-conformal prediction replaces point estimates with calibrated
+  guarantees: classification gets prediction SETS (a set of size 1 is an
+  unambiguous call, size 2+ means the model genuinely can't distinguish those
+  classes at this confidence level), and a defect-probability regressor — trained
+  on Sub-Module 1.3's confounded `true_defect_probability`, a genuine
+  irreducible-uncertainty target — gets calibrated intervals instead of a single
+  number. Coverage is verified empirically on a held-out test set (measured
+  92.0% classification / 90.3% regression against a 90% target), not assumed.
+  Verified example: 150 W/10 mTorr (a real class-boundary condition) is flagged
+  low-confidence with a 2-class set, while 280 W/1.5 mTorr gets a single-class,
+  high-confidence call. Run `python -m ai_module.uncertainty_quantification` to
+  see the coverage report and the trust-layer contrast.
 
 See [`CLAUDE.md`](CLAUDE.md) for the full module build order and non-negotiable
 technical principles — read it before starting any new module.

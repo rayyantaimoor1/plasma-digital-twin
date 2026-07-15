@@ -130,6 +130,16 @@ def test_confounder_values_within_documented_bounds(dataset) -> None:
     assert dataset["gas_purity"].between(1.0 - cfg.gas_impurity_max, 1.0).all()
 
 
+def test_true_defect_probability_is_valid_and_confounded(dataset) -> None:
+    """true_defect_probability (added for Sub-Module 2.8's regression target)
+    must be a valid probability, and - like true_process_quality - must genuinely
+    vary across replicates of the SAME recipe, since it is read off the same
+    confounder-perturbed simulate() call."""
+    assert dataset["true_defect_probability"].between(0.0, 1.0).all()
+    per_recipe_spread = dataset.groupby(["rf_power_w", "pressure_mtorr"])["true_defect_probability"].std()
+    assert (per_recipe_spread > 0).any()
+
+
 # ---------------------------------------------------------------------------
 # Reproducibility (FE-1.3.7)
 # ---------------------------------------------------------------------------
