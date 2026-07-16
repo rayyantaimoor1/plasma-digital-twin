@@ -13,11 +13,16 @@ import pytest
 from digital_twin.physics_engine import (
     DEFAULT_GEOMETRY,
     FLOATING_SHEATH_COEFF,
+    ION_NEUTRAL_XSEC,
     RF_MEAN_SHEATH_FRACTION,
     bohm_velocity,
     child_langmuir_sheath,
+    collisional_energy_loss,
     debye_length,
+    elastic_rate_coeff,
+    excitation_rate_coeff,
     implied_ion_power_w,
+    ion_mean_free_path,
     ionization_rate_coeff,
     gas_density,
     chamber_volume,
@@ -27,6 +32,7 @@ from digital_twin.physics_engine import (
     solve_plasma_density,
     sheath_and_ion_energy,
     simulate,
+    total_energy_per_pair,
 )
 
 # Nominal operating range from the FYP scope document (Section 6).
@@ -80,6 +86,74 @@ def test_particle_balance_residual_is_zero_at_solution() -> None:
         loss = bohm_velocity(te) * area
         # Residual should be a tiny fraction of either (balanced) term.
         assert abs(production - loss) < 1e-6 * production
+
+
+# ---------------------------------------------------------------------------
+# Rate coefficients and energy-loss building blocks (Phase 4 coverage pass).
+# These feed solve_electron_temperature/solve_plasma_density and were previously
+# exercised only indirectly through those solves; direct tests pin down their
+# own behaviour, including the L&L Fig. 3.17 reference-value check that was
+# verified ad hoc during the Sub-Module 1.2 physics review but never captured
+# as a permanent regression test.
+# ---------------------------------------------------------------------------
+def test_excitation_rate_coeff_increases_with_temperature() -> None:
+    """Hotter electrons excite more often - K_exc must rise monotonically with Te."""
+    values = [excitation_rate_coeff(te) for te in (2.0, 3.0, 5.0, 7.0)]
+    for lower, higher in zip(values, values[1:]):
+        assert higher > lower
+
+
+def test_excitation_rate_coeff_positive() -> None:
+    for te in (0.5, 1.0, 3.0, 10.0, 30.0):
+        assert excitation_rate_coeff(te) > 0.0
+
+
+def test_elastic_rate_coeff_is_constant() -> None:
+    """Documented as a fixed order-of-magnitude value, not a function of Te."""
+    values = {elastic_rate_coeff(te) for te in (2.0, 5.0, 10.0, 30.0)}
+    assert values == {1.0e-13}
+
+
+def test_collisional_energy_loss_matches_lieberman_lichtenberg_fig_3_17() -> None:
+    """Verified reference check (Sub-Module 1.2 physics review): E_c(Te) must land
+    within the published argon Fig. 3.17 bands - ~50-70 V at Te=3 eV and
+    ~35-45 V at Te=5 eV - and rise steeply as Te falls below ~4 eV."""
+    assert 50.0 <= collisional_energy_loss(3.0) <= 70.0
+    assert 35.0 <= collisional_energy_loss(5.0) <= 45.0
+    assert collisional_energy_loss(2.0) > collisional_energy_loss(3.0) > collisional_energy_loss(5.0)
+
+
+def test_collisional_energy_loss_exceeds_ionization_potential() -> None:
+    """E_c must always exceed the bare 15.76 V ionization potential (E_iz) - the
+    excitation/elastic terms are additional costs on top of it, never negative."""
+    for te in (1.0, 3.0, 5.0, 10.0, 20.0):
+        assert collisional_energy_loss(te) > 15.76
+
+
+def test_total_energy_per_pair_decomposes_exactly() -> None:
+    """E_T = E_c(Te) + 2*Te + (FLOATING_SHEATH_COEFF + 0.5)*Te exactly - the
+    documented closed-form decomposition, not an approximation."""
+    for te in (2.0, 3.0, 5.0, 8.0):
+        expected = collisional_energy_loss(te) + 2.0 * te + (FLOATING_SHEATH_COEFF + 0.5) * te
+        assert total_energy_per_pair(te) == pytest.approx(expected, rel=1e-12)
+
+
+def test_total_energy_per_pair_exceeds_collisional_loss_alone() -> None:
+    for te in (2.0, 5.0, 10.0):
+        assert total_energy_per_pair(te) > collisional_energy_loss(te)
+
+
+def test_ion_mean_free_path_inversely_proportional_to_gas_density() -> None:
+    """lambda_i = 1/(n_g * sigma_i): the product with n_g must equal the fixed
+    cross-section constant exactly, and lambda_i must shrink as pressure rises."""
+    lambdas = []
+    for pressure in (1.0, 10.0, 20.0):
+        n_g = gas_density(pressure, DEFAULT_GEOMETRY.gas_temp_k)
+        lam = ion_mean_free_path(n_g)
+        assert n_g * lam == pytest.approx(1.0 / ION_NEUTRAL_XSEC, rel=1e-9)
+        lambdas.append(lam)
+    for longer, shorter in zip(lambdas, lambdas[1:]):
+        assert shorter < longer
 
 
 # ---------------------------------------------------------------------------

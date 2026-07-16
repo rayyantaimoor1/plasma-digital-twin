@@ -163,6 +163,24 @@ def test_normal_data_requires_noise() -> None:
         generate_normal_operating_data(noise_level=0.0)
 
 
+def test_scoring_before_fit_raises() -> None:
+    """Calling any scoring method on an unfitted detector must fail loudly
+    (Phase 4 coverage pass) rather than silently returning a meaningless score -
+    _residual_std is only set inside fit()."""
+    unfitted = PlasmaAnomalyDetector()
+    normal = generate_normal_operating_data(replicates=1).iloc[:3]
+    with pytest.raises(RuntimeError):
+        unfitted.anomaly_score(normal)
+
+
+def test_inject_anomaly_rejects_unknown_fault() -> None:
+    """The fault-dispatch branch's fallback ValueError (Phase 4 coverage pass) -
+    reachable if a caller bypasses AnomalyFault's type safety."""
+    rng = np.random.default_rng(0)
+    with pytest.raises(ValueError):
+        inject_anomaly(150.0, 10.0, "not_a_real_fault", rng)
+
+
 # ---------------------------------------------------------------------------
 # Statistical process control (FE-2.2.4)
 # ---------------------------------------------------------------------------

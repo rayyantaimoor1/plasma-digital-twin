@@ -200,5 +200,18 @@ Phase 1 (Digital Twin) is complete. Phase 2 (AI Module) in progress:
   `AppTest` harness (`tests/test_dashboard.py`), which runs each panel headless and
   fails on any exception. Launch with `streamlit run dashboard/app.py`.
 
+- **Phase 4 — full pytest coverage pass**. Done.
+  Audited every source module's public API and every `raise` site (18 across 9
+  modules) against its test file. Found and closed two genuine gaps: the physics
+  engine's rate-coefficient/energy-loss building blocks (`excitation_rate_coeff`,
+  `elastic_rate_coeff`, `collisional_energy_loss`, `ion_mean_free_path`,
+  `total_energy_per_pair`) were previously exercised only indirectly through
+  `solve_electron_temperature`/`solve_plasma_density` — now directly tested,
+  including a permanent regression test for the Lieberman & Lichtenberg Fig. 3.17
+  reference check that had only existed as an ad hoc verification script during
+  development; and two untested error paths in the anomaly detector (scoring
+  before `.fit()`, an unrecognised fault type). All other raise sites were
+  confirmed already covered 1:1. **344 tests passing, 0 failures.**
+
 See [`CLAUDE.md`](CLAUDE.md) for the full module build order and non-negotiable
 technical principles — read it before starting any new module.
