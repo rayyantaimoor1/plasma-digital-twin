@@ -90,6 +90,21 @@ def open_db():
     return ExperimentDatabase()
 
 
+@st.cache_resource(show_spinner="Training the optional deep-learning autoencoder (FE-2.2.6)...")
+def get_autoencoder_comparison():
+    """Classical (Isolation Forest) vs deep-learning (autoencoder) detector
+    comparison. torch is imported LAZILY here so the whole dashboard still runs
+    when the optional dependency is absent - the caller guards against ImportError
+    and shows an install hint instead."""
+    from ai_module.anomaly_detection import generate_anomalous_data, generate_normal_operating_data
+    from ai_module.autoencoder_detector import compare_with_isolation_forest
+
+    normal_train = generate_normal_operating_data()
+    normal_test = generate_normal_operating_data(seed=99, replicates=1)
+    anomalous = generate_anomalous_data(n_samples=150)
+    return compare_with_isolation_forest(normal_train, normal_test, anomalous)
+
+
 # ---------------------------------------------------------------------------
 # Shared chamber-configuration sidebar (Sub-Module 1.1)
 # ---------------------------------------------------------------------------

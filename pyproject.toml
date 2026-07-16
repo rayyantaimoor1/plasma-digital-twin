@@ -2,6 +2,7 @@
 testpaths = ["tests"]
 markers = [
     "dashboard: Streamlit dashboard smoke tests (slow; build cached models via AppTest)",
+    "torch: optional deep-learning autoencoder tests (FE-2.2.6; need requirements-optional.txt)",
 ]
 # Surgically silence two known THIRD-PARTY deprecation warnings so the test
 # output stays readable - matched by exact message so nothing from our own code

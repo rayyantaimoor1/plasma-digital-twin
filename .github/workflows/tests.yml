@@ -41,9 +41,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run tests (excluding the slow Streamlit dashboard smoke tests)
-        # The dashboard AppTest smoke tests rebuild every cached model per page
-        # and are slow/heavy for CI; the full engine + AI logic (and every
-        # non-negotiable principle) is covered by the rest of the suite. Run the
-        # dashboard tests locally with `pytest -m dashboard`.
-        run: pytest -m "not dashboard" -q
+      - name: Run tests (excluding the slow dashboard and optional-torch tests)
+        # Excludes two groups to keep CI fast and lightweight:
+        #   - dashboard: AppTest smoke tests rebuild every cached model per page.
+        #   - torch: the OPTIONAL autoencoder (FE-2.2.6) needs PyTorch, which is
+        #     not in the base requirements.txt (see requirements-optional.txt);
+        #     CI installs only the core deps, so these skip anyway - excluding
+        #     them by marker keeps the run explicit.
+        # The full engine + AI logic and every non-negotiable principle are
+        # covered by the rest of the suite. Run the excluded groups locally with
+        # `pytest -m dashboard` and `pytest -m torch`.
+        run: pytest -m "not dashboard and not torch" -q

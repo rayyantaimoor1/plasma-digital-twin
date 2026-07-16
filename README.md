@@ -152,6 +152,16 @@ Phase 1 (Digital Twin) is complete. Phase 2 (AI Module) in progress:
   Includes severity levels, root-cause indication, SQLite event logging, an SPC
   control chart on process quality, and a Plotly anomaly timeline. Run
   `python -m ai_module.anomaly_detection` to see the detection-vs-range-check report.
+  - **FE-2.2.6 (optional, deep-learning comparison)**
+    ([`ai_module/autoencoder_detector.py`](ai_module/autoencoder_detector.py)). Done.
+    A lightweight PyTorch autoencoder (reconstruction error = anomaly score) as a
+    second, deep-learning detector. Trained on the raw features, it *learns* the
+    normal manifold directly and matches Isolation Forest (~91% vs ~93% recall)
+    **without** the manual residual feature engineering the classical method needed
+    — the honest classical-vs-deep-learning finding FE-2.2.6 asks for. PyTorch is
+    optional and kept out of the base install (see `requirements-optional.txt`);
+    `pip install -r requirements-optional.txt`, then
+    `python -m ai_module.autoencoder_detector` for the comparison, or `pytest -m torch`.
 - **Sub-Module 2.3** — plasma trend analysis and monitoring engine
   ([`ai_module/trend_analysis.py`](ai_module/trend_analysis.py)). Done.
   Tracks reactivity, process quality, uniformity, and electron temperature across

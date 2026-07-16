@@ -107,3 +107,31 @@ if len(events):
 else:
     st.info("No anomaly events logged yet. Set an anomalous operating point and use "
             "'Log this anomaly event' above.")
+
+st.divider()
+
+# --- optional deep-learning comparison (FE-2.2.6) ---
+st.subheader("Classical vs deep-learning detector (optional, FE-2.2.6)")
+st.caption(
+    "Isolation Forest (classical, on physics residuals) vs a PyTorch autoencoder "
+    "(deep learning, learning the normal manifold from raw features) on the same "
+    "injected relationship violations — the autoencoder matches the classical "
+    "method without the manual residual feature engineering."
+)
+try:
+    from dashboard.backend import get_autoencoder_comparison
+
+    comp = get_autoencoder_comparison()
+    st.dataframe(pd.DataFrame([
+        {"detector": "Isolation Forest (classical)", "recall": f"{comp.isolation_forest_recall:.1%}",
+         "false positive rate": f"{comp.isolation_forest_fpr:.1%}"},
+        {"detector": "Autoencoder (deep learning)", "recall": f"{comp.autoencoder_recall:.1%}",
+         "false positive rate": f"{comp.autoencoder_fpr:.1%}"},
+        {"detector": "Range check (naive baseline)", "recall": f"{comp.range_check_recall:.1%}",
+         "false positive rate": "—"},
+    ]), use_container_width=True)
+except ImportError:
+    st.info(
+        "PyTorch is not installed. This optional comparison needs the deep-learning "
+        "extra: `pip install -r requirements-optional.txt`, then reload."
+    )

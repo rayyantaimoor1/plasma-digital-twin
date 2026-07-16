@@ -1,0 +1,12 @@
+# Optional dependencies - NOT required for the core platform.
+#
+# PyTorch is scoped ONLY for the optional autoencoder anomaly detector
+# (Sub-Module 2.2, FE-2.2.6) - the "classical (Isolation Forest) vs deep-learning
+# (autoencoder)" comparison. It is deliberately kept out of the base
+# requirements.txt so the core install and CI stay lightweight, and so the tree
+# ensembles remain the sole classifiers for the core task (CLAUDE.md principle #7).
+#
+# Install alongside the base requirements to enable it:
+#     pip install -r requirements.txt -r requirements-optional.txt
+# then run the deep-learning tests with:  pytest -m torch
+torch==2.13.0
