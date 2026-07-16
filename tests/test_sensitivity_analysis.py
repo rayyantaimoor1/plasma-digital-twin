@@ -1,11 +1,16 @@
 """Tests for Sub-Module 1.5 - parameter sensitivity and sweep analysis."""
+from dataclasses import replace
+
 import numpy as np
 import plotly.graph_objects as go
 import pytest
 
 from digital_twin.chamber_config import PRESSURE_RANGE, RF_POWER_RANGE, default_parameters
+from digital_twin.physics_engine import simulate
 from digital_twin.sensitivity_analysis import (
+    OATSensitivityResult,
     OUTPUT_METRICS,
+    SweepPoint,
     parameter_effect_curve,
     paired_sweep_heatmap,
     run_full_oat_analysis,
@@ -86,6 +91,23 @@ def test_sensitivity_score_is_non_negative_for_every_metric(metric) -> None:
     oat = run_full_oat_analysis(default_parameters(), n_points=8)
     for result in oat.values():
         assert result.sensitivity_score(metric) >= 0.0
+
+
+def test_sensitivity_score_zero_division_guard_returns_zero() -> None:
+    """No real metric in this model ever averages to ~0 (Phase 4 coverage pass
+    found this guard was never exercised) - directly construct a synthetic sweep
+    where a metric is identically zero, to verify the mean_abs < 1e-30 guard
+    returns 0.0 rather than raising ZeroDivisionError or producing NaN/inf."""
+    baseline = default_parameters()
+    result = simulate(baseline.rf_power_w, baseline.pressure_mtorr)
+    zero_result = replace(result, defect_probability=0.0)
+    sweep = OATSensitivityResult(
+        parameter_name="rf_power_w",
+        baseline=baseline,
+        sweep_points=[SweepPoint(varied_value=v, result=zero_result) for v in (50.0, 150.0, 300.0)],
+    )
+    score = sweep.sensitivity_score("defect_probability")
+    assert score == 0.0
 
 
 # ---------------------------------------------------------------------------

@@ -19,6 +19,7 @@ from digital_twin.physics_engine import simulate
 from ai_module.classification import ClassifierKind, train_classifiers
 from ai_module.recommendation_engine import (
     Configuration,
+    _action_text,
     load_recommendations,
     recommend,
     store_recommendation,
@@ -33,6 +34,13 @@ def classifier():
 
 
 MARGINAL_BASELINE = Configuration(rf_power_w=250.0, pressure_mtorr=18.0)
+# Verified: rf_voltage_v=300V at 200W/5mTorr gives defect_probability=0.873 (well
+# above DEFECT_CONCERN=0.5), driving the RF-bias-voltage candidate branch that
+# MARGINAL_BASELINE (rf_voltage_v=None) never touches - the best-practice
+# "reduce bias voltage" rule, the exploratory bias-voltage palette, and the
+# RF-bias-voltage phrasing in _action_text are otherwise entirely untested
+# (Phase 4 coverage pass).
+RF_BIASED_HIGH_DEFECT_BASELINE = Configuration(rf_power_w=200.0, pressure_mtorr=5.0, rf_voltage_v=300.0)
 
 
 # ---------------------------------------------------------------------------
@@ -116,6 +124,37 @@ def test_action_text_matches_the_actual_parameter_change() -> None:
             assert "RF power" in rec.action_text
         elif rec.recommended.pressure_mtorr != rec.baseline.pressure_mtorr:
             assert "pressure" in rec.action_text
+
+
+def test_rf_bias_voltage_candidates_generated_when_baseline_has_bias_and_high_defect() -> None:
+    """MARGINAL_BASELINE never sets rf_voltage_v, so the entire RF-bias-voltage
+    candidate branch (best-practice reduction rule + exploratory palette) is
+    otherwise untested (Phase 4 coverage pass). At the verified high-defect,
+    RF-biased baseline, both the best-practice "reduce bias voltage" rule and the
+    exploratory bias palette must fire."""
+    recs = recommend(RF_BIASED_HIGH_DEFECT_BASELINE, max_recommendations=8)
+    bias_changes = [r for r in recs if r.recommended.rf_voltage_v != RF_BIASED_HIGH_DEFECT_BASELINE.rf_voltage_v]
+    assert bias_changes, "expected at least one recommendation to adjust rf_voltage_v"
+    # the best-practice rule specifically proposes REDUCING bias voltage when defect is high
+    assert any(r.recommended.rf_voltage_v < RF_BIASED_HIGH_DEFECT_BASELINE.rf_voltage_v for r in bias_changes)
+
+
+def test_action_text_reports_rf_bias_voltage_changes() -> None:
+    recs = recommend(RF_BIASED_HIGH_DEFECT_BASELINE, max_recommendations=8)
+    bias_changes = [r for r in recs if r.recommended.rf_voltage_v != RF_BIASED_HIGH_DEFECT_BASELINE.rf_voltage_v]
+    assert bias_changes
+    for rec in bias_changes:
+        assert "RF bias voltage" in rec.action_text
+        assert "300 V" in rec.action_text  # the baseline value must be named
+
+
+def test_action_text_reports_no_change_for_identical_configurations() -> None:
+    """The final fallback in _action_text (Phase 4 coverage pass): recommend()'s
+    normal flow never reaches it (duplicate/no-op candidates are filtered before
+    _evaluate_candidate is ever called), so it is only reachable via a direct
+    call with two identical configurations - verified directly here."""
+    identical = Configuration(rf_power_w=150.0, pressure_mtorr=10.0, rf_voltage_v=200.0)
+    assert _action_text(identical, identical) == "No change"
 
 
 def test_improves_property_matches_quality_delta_sign() -> None:

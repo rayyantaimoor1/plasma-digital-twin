@@ -3,3 +3,16 @@ testpaths = ["tests"]
 markers = [
     "dashboard: Streamlit dashboard smoke tests (slow; build cached models via AppTest)",
 ]
+
+[tool.coverage.run]
+source = ["digital_twin", "ai_module"]
+
+[tool.coverage.report]
+# Every source module ends with `if __name__ == "__main__":` - a standalone demo
+# block (run via `python -m <module>`) used throughout development to sanity-check
+# real output, not unit-testable business logic. Excluding it here makes the
+# coverage report reflect testable-code coverage honestly, rather than penalising
+# modules for having a documented manual entry point.
+exclude_lines = [
+    "if __name__ == .__main__.:",
+]

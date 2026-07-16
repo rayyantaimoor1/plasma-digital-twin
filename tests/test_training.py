@@ -120,6 +120,29 @@ def test_training_history_returns_dataframe_after_logging(dataset, registry, tmp
     assert len(history) >= 3  # at least the 3 nested child runs
 
 
+def test_training_history_returns_empty_dataframe_on_mlflow_exception(tmp_path, monkeypatch) -> None:
+    """training_history()'s fallback (Phase 4 coverage pass): a nonexistent
+    experiment name alone doesn't trigger it (mlflow.search_runs degrades
+    gracefully on its own), so the except branch is only reachable if the
+    underlying call genuinely raises - simulated here to verify the function
+    degrades to an empty DataFrame rather than crashing the dashboard panel
+    that calls it."""
+    import mlflow
+
+    import ai_module.training as training_module
+
+    monkeypatch.setattr(training_module, "MLRUNS_DIR", tmp_path / "mlruns")
+
+    def _raise(*args, **kwargs):
+        raise mlflow.exceptions.MlflowException("simulated tracking-store failure")
+
+    monkeypatch.setattr(mlflow, "search_runs", _raise)
+
+    history = training_history()
+    assert isinstance(history, pd.DataFrame)
+    assert history.empty
+
+
 def test_train_and_log_without_mlflow_leaves_run_id_none(dataset, registry) -> None:
     train_and_log(dataset, registry, log_to_mlflow=False)
     for kind in ClassifierKind:

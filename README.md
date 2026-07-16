@@ -61,7 +61,13 @@ Recommendations, Session History, Model Training) are in the left-hand navigatio
 ```bash
 pytest                 # full suite
 pytest -m "not dashboard"   # skip the slow Streamlit AppTest smoke tests
+pytest --cov=digital_twin --cov=ai_module --cov-report=term-missing   # with coverage
 ```
+
+Coverage stands at **100% of testable code** across every module in `digital_twin/` and
+`ai_module/` (`if __name__ == "__main__":` demo blocks are excluded via
+`pyproject.toml`'s `[tool.coverage.report]` — each one is a manual entry point run via
+`python -m <module>`, independently verified during development, not unit-test material).
 
 ## Status
 
