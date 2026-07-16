@@ -3,6 +3,15 @@ testpaths = ["tests"]
 markers = [
     "dashboard: Streamlit dashboard smoke tests (slow; build cached models via AppTest)",
 ]
+# Surgically silence two known THIRD-PARTY deprecation warnings so the test
+# output stays readable - matched by exact message so nothing from our own code
+# is ever hidden. (mlflow still uses the deprecated codecs.open internally; shap
+# still uses the deprecated matplotlib Colormap.set_bad/over/under.) These are
+# upstream-library issues, not ours, and there is nothing to fix on our side.
+filterwarnings = [
+    'ignore:codecs\.open\(\) is deprecated:DeprecationWarning',
+    'ignore:The set_(bad|over|under) function will be deprecated:PendingDeprecationWarning',
+]
 
 [tool.coverage.run]
 source = ["digital_twin", "ai_module"]

@@ -45,6 +45,17 @@ source .venv/bin/activate     # macOS/Linux
 pip install -r requirements.txt
 ```
 
+`requirements.txt` is pinned via `pip freeze` (on Windows); the single Windows-only
+transitive dependency (`pywin32`) carries a `sys_platform == "win32"` marker so the
+same file installs cleanly on Linux/macOS too.
+
+## Continuous integration
+
+Every push and pull request to `main` runs the pytest suite on GitHub Actions
+([`.github/workflows/tests.yml`](.github/workflows/tests.yml)) — because all seeds are
+fixed and recorded (FE-1.3.7), a CI run reproduces the same dataset, models, and metrics
+as a local run.
+
 ## Running the dashboard
 
 ```bash

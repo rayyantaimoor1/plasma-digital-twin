@@ -46,7 +46,7 @@ from digital_twin.chamber_config import (
     RF_POWER_MIN_W,
 )
 from digital_twin.dataset_generation import SUITABILITY_CLASSES
-from digital_twin.physics_engine import ChamberGeometry, DEFAULT_GEOMETRY, simulate
+from digital_twin.physics_engine import ChamberGeometry, DEFAULT_GEOMETRY, SimulationResult, simulate
 from digital_twin.session_manager import DEFAULT_DB_PATH
 from ai_module.classification import PlasmaClassifier, classify_configuration
 
@@ -129,7 +129,7 @@ def _key(cfg: Configuration) -> tuple:
 # ---------------------------------------------------------------------------
 # FE-2.6.2 - rule-based candidate proposal (best practices + exploration)
 # ---------------------------------------------------------------------------
-def _candidate_moves(cfg: Configuration, result) -> list[tuple[Configuration, str]]:
+def _candidate_moves(cfg: Configuration, result: SimulationResult) -> list[tuple[Configuration, str]]:
     """Propose (candidate configuration, best-practice rationale) pairs. Ordered
     best-practice-first so that when an exploratory step lands on the same config,
     de-duplication keeps the richer best-practice rationale."""
@@ -185,7 +185,7 @@ def _action_text(a: Configuration, b: Configuration) -> str:
 
 def _evaluate_candidate(
     baseline: Configuration,
-    baseline_result,
+    baseline_result: SimulationResult,
     candidate: Configuration,
     rationale: str,
     classifier: Optional[PlasmaClassifier],
