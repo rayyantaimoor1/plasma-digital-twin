@@ -27,11 +27,13 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          # 3.12 is the project's hard floor (XGBoost 3.x and SHAP 0.5x require
-          # it); local development uses 3.14. The pywin32 pin in requirements.txt
+          # Matches the interpreter requirements.txt was pinned against (local dev
+          # runs 3.14.5), so the exact `pip freeze` pins resolve cleanly and CI
+          # reproduces the recorded environment faithfully. The project's hard
+          # floor is 3.12 (XGBoost 3.x / SHAP 0.5x need >= 3.12). The pywin32 pin
           # carries a `sys_platform == "win32"` marker so this Linux runner skips
           # it cleanly.
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
 
       - name: Install dependencies
