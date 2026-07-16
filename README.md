@@ -1,5 +1,7 @@
 # AI-Assisted Plasma Process Experimentation & Digital Twin Analytics Platform
 
+[![tests](https://github.com/rayyantaimoor1/plasma-digital-twin/actions/workflows/tests.yml/badge.svg)](https://github.com/rayyantaimoor1/plasma-digital-twin/actions/workflows/tests.yml)
+
 Final Year Project — BSCS, COMSATS University Islamabad (2023–2027).
 
 A software-only virtual plasma laboratory for low-pressure RF capacitively coupled (CCP)
