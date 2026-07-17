@@ -118,7 +118,7 @@ class ModelRegistry:
         self._classifiers[kind] = classifier
         self._entries[kind] = ModelRegistryEntry(
             classifier=kind.value,
-            hyperparameters=classifier.model.get_params(),
+            hyperparameters=classifier.base_model.get_params(),
             n_train_samples=n_train_samples,
             trained_at=datetime.now(timezone.utc).isoformat(),
             dataset_seed=dataset_seed,
@@ -201,7 +201,7 @@ def train_and_log(
                 clf = report.classifiers_random[kind]
                 metrics = random_metrics(kind)
                 with mlflow.start_run(run_name=kind.value, nested=True) as child_run:
-                    _log_params(clf.model.get_params())
+                    _log_params(clf.base_model.get_params())
                     mlflow.log_metric("accuracy", metrics.accuracy)
                     mlflow.log_metric("precision_macro", metrics.precision_macro)
                     mlflow.log_metric("recall_macro", metrics.recall_macro)

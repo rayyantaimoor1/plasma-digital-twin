@@ -19,9 +19,18 @@ Design notes:
   * Only the logistic-regression baseline is feature-scaled (StandardScaler);
     Random Forest and XGBoost are tree-based and scale-invariant, so scaling them
     would be a no-op that only adds a moot preprocessing step.
-  * "Calibrated probability scores" (FE-2.1.1) here means each model's own
-    predict_proba output. Rigorous calibration (conformal prediction / bootstrapped
-    intervals) is Sub-Module 2.8's explicit job, not duplicated here.
+  * "Calibrated probability scores" (FE-2.1.1): Random Forest and XGBoost are
+    each wrapped in CalibratedClassifierCV (isotonic, 5-fold) so predict_proba
+    returns genuinely calibrated probabilities rather than raw tree-vote
+    fractions - empirically verified to reduce Brier score vs the uncalibrated
+    model (tests/test_classification.py). The logistic-regression BASELINE is
+    left uncalibrated on purpose: as the interpretable reference model it should
+    reflect what an off-the-shelf LogisticRegression actually outputs, and
+    calibrating it too would erase the "raw vs. calibrated ensemble" contrast
+    this exists to show. This is calibration of probability VALUES (reliability);
+    Sub-Module 2.8's conformal prediction is a separate, complementary form of
+    uncertainty quantification with a formal coverage guarantee on prediction
+    SETS/intervals, not duplicated here.
   * SHAP explainer choice is model-specific (verified empirically per model type):
     TreeExplainer(feature_perturbation="tree_path_dependent") for Random Forest
     and XGBoost (the plain default explainer fails on XGBoost 3.x with a
@@ -44,6 +53,7 @@ import numpy as np
 import pandas as pd
 import shap
 from scipy.stats import binomtest
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
@@ -61,6 +71,19 @@ from digital_twin.physics_engine import ChamberGeometry, DEFAULT_GEOMETRY, simul
 
 SIGNIFICANCE_ALPHA = 0.05  # standard threshold for the McNemar significance test
 
+# FE-2.1.1 calibration settings for the Random Forest / XGBoost predict_proba.
+# Isotonic (a free-form monotonic fit) rather than sigmoid/Platt scaling, since
+# each class has well over a hundred calibration samples in this project's
+# datasets - isotonic needs more data than sigmoid but is not restricted to a
+# parametric (logistic) miscalibration shape, so it is the better default once
+# there is enough data to fit it, which there reliably is here.
+CALIBRATION_METHOD = "isotonic"
+# 5-fold: for each fold, CalibratedClassifierCV fits a fresh copy of the base
+# estimator on the other four folds and calibrates it on the held-out fold, so
+# no row is ever used to calibrate a probability the model saw during its own
+# training - the leakage-free property the "genuinely calibrated" claim relies on.
+CALIBRATION_CV_FOLDS = 5
+
 
 class ClassifierKind(str, Enum):
     LOGISTIC_REGRESSION = "logistic_regression"
@@ -77,11 +100,30 @@ class PlasmaClassifier:
     """Uniform wrapper around one trained model: label encoding, optional
     feature scaling (baseline only), and a model-appropriate SHAP explainer,
     all hidden behind the same interface regardless of which of the three
-    underlying libraries is used [FE-2.1.1]."""
+    underlying libraries is used [FE-2.1.1].
+
+    `model` is what predict()/predict_proba() actually call. For Random Forest
+    and XGBoost this is a CalibratedClassifierCV wrapper (isotonic, 5-fold), so
+    predict_proba returns genuinely calibrated probabilities rather than raw
+    tree-vote fractions. `explainer_model` - only set for those two - holds a
+    plain (uncalibrated) estimator fit with the SAME hyperparameters and data,
+    used exclusively by shap_values(): SHAP's TreeExplainer needs direct access
+    to real tree structure, which it cannot get from CalibratedClassifierCV's
+    internal fold-wise copies.
+    """
     kind: ClassifierKind
-    model: object  # sklearn/xgboost estimator, already fit
+    model: object  # sklearn/xgboost estimator, or CalibratedClassifierCV wrapper, already fit
     label_encoder: LabelEncoder
     scaler: Optional[StandardScaler]  # only set for the logistic-regression baseline
+    explainer_model: Optional[object] = None  # RF/XGBoost only - raw model backing SHAP, see above
+
+    @property
+    def base_model(self) -> object:
+        """The plain (uncalibrated) fitted estimator describing this
+        classifier's actual hyperparameters - `explainer_model` for RF/XGBoost
+        (whose `model` is a calibration wrapper), `model` itself for the
+        never-calibrated baseline."""
+        return self.explainer_model if self.explainer_model is not None else self.model
 
     def _prepare(self, X: pd.DataFrame) -> np.ndarray:
         arr = X[FEATURE_COLUMNS].to_numpy()
@@ -104,8 +146,17 @@ class PlasmaClassifier:
         if self.kind == ClassifierKind.LOGISTIC_REGRESSION:
             explainer = shap.LinearExplainer(self.model, self._prepare(background))
             return np.asarray(explainer(self._prepare(X)).values)
-        explainer = shap.TreeExplainer(self.model, feature_perturbation="tree_path_dependent")
+        explainer = shap.TreeExplainer(self.base_model, feature_perturbation="tree_path_dependent")
         return np.asarray(explainer(self._prepare(X)).values)
+
+
+def _calibrated(estimator: object) -> CalibratedClassifierCV:
+    """Wrap an unfit RF/XGBoost estimator for isotonic probability calibration
+    [FE-2.1.1]. `cv=CALIBRATION_CV_FOLDS` makes CalibratedClassifierCV fit its
+    own internal copies of `estimator` on each fold and calibrate each on that
+    fold's held-out rows - scikit-learn's standard leakage-free pattern, so no
+    separate calibration split needs to be threaded through this module."""
+    return CalibratedClassifierCV(estimator, method=CALIBRATION_METHOD, cv=CALIBRATION_CV_FOLDS)
 
 
 def train_classifiers(
@@ -116,6 +167,14 @@ def train_classifiers(
     Hyperparameters are modest, fixed defaults appropriate for a dataset of a few
     hundred to a few thousand rows (this project's scale) - not tuned per dataset,
     keeping the comparison about model FAMILY, not a hyperparameter search.
+
+    Random Forest and XGBoost are each fit TWICE with IDENTICAL hyperparameters:
+    once as a plain estimator on all of `train_df` (kept as `explainer_model`,
+    used only by SHAP - TreeExplainer needs real tree structure, which it can't
+    reach through a CalibratedClassifierCV wrapper), and once wrapped in
+    CalibratedClassifierCV for genuinely calibrated predict_proba output. Both
+    fits see the same data and hyperparameters, so this is one predictive model
+    exposed through two views, not two models that could disagree.
     """
     X, y = features_and_labels(train_df)
     X_arr = X[FEATURE_COLUMNS].to_numpy()
@@ -128,24 +187,28 @@ def train_classifiers(
     baseline = LogisticRegression(max_iter=2000, random_state=seed)
     baseline.fit(scaler.transform(X_arr), y_enc)
 
-    rf = RandomForestClassifier(n_estimators=200, random_state=seed)
-    rf.fit(X_arr, y_enc)
+    rf_kwargs = dict(n_estimators=200, random_state=seed)
+    rf_explainer = RandomForestClassifier(**rf_kwargs).fit(X_arr, y_enc)
+    rf_calibrated = _calibrated(RandomForestClassifier(**rf_kwargs)).fit(X_arr, y_enc)
 
-    xgboost_model = xgb.XGBClassifier(
+    xgb_kwargs = dict(
         n_estimators=200, max_depth=4, learning_rate=0.1, random_state=seed,
         eval_metric="mlogloss",
     )
-    xgboost_model.fit(X_arr, y_enc)
+    xgb_explainer = xgb.XGBClassifier(**xgb_kwargs).fit(X_arr, y_enc)
+    xgb_calibrated = _calibrated(xgb.XGBClassifier(**xgb_kwargs)).fit(X_arr, y_enc)
 
     return {
         ClassifierKind.LOGISTIC_REGRESSION: PlasmaClassifier(
             BASELINE_KIND, baseline, label_encoder, scaler
         ),
         ClassifierKind.RANDOM_FOREST: PlasmaClassifier(
-            ClassifierKind.RANDOM_FOREST, rf, label_encoder, None
+            ClassifierKind.RANDOM_FOREST, rf_calibrated, label_encoder, None,
+            explainer_model=rf_explainer,
         ),
         ClassifierKind.XGBOOST: PlasmaClassifier(
-            ClassifierKind.XGBOOST, xgboost_model, label_encoder, None
+            ClassifierKind.XGBOOST, xgb_calibrated, label_encoder, None,
+            explainer_model=xgb_explainer,
         ),
     }
 

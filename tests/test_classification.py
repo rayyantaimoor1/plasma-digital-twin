@@ -8,12 +8,15 @@ envelope so every suitability class is represented.
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn.calibration import CalibratedClassifierCV
 
 from digital_twin.dataset_generation import (
+    DEFAULT_SEED,
     FEATURE_COLUMNS,
     SUITABILITY_CLASSES,
     features_and_labels,
     generate_dataset,
+    random_split,
 )
 from ai_module.classification import (
     BASELINE_KIND,
@@ -51,6 +54,21 @@ def evaluation_report(dataset):
     return run_full_evaluation(dataset)
 
 
+@pytest.fixture(scope="module")
+def held_out_split(dataset):
+    """A genuine train/test split, held separate from the `classifiers` fixture
+    (which fits on the full `dataset`) - used ONLY by the calibration check
+    below. Evaluating calibration on rows a model trained on would be circular
+    and would flatter the calibrated model for the wrong reason."""
+    return random_split(dataset, seed=DEFAULT_SEED)
+
+
+@pytest.fixture(scope="module")
+def calibration_check_classifiers(held_out_split):
+    train_df, _test_df = held_out_split
+    return train_classifiers(train_df, seed=DEFAULT_SEED)
+
+
 # ---------------------------------------------------------------------------
 # Training [FE-2.1.1]
 # ---------------------------------------------------------------------------
@@ -68,6 +86,33 @@ def test_all_classifiers_share_the_same_label_encoder_classes(classifiers) -> No
     baseline_classes = list(classifiers[ClassifierKind.LOGISTIC_REGRESSION].label_encoder.classes_)
     for kind in ENSEMBLE_KINDS:
         assert list(classifiers[kind].label_encoder.classes_) == baseline_classes
+
+
+def test_ensembles_are_wrapped_in_calibrated_classifier_cv(classifiers) -> None:
+    """FE-2.1.1: Random Forest and XGBoost must be genuinely calibrated
+    (CalibratedClassifierCV), not the baseline - calibrating the interpretable
+    reference model too would erase the raw-vs-calibrated contrast."""
+    assert not isinstance(classifiers[ClassifierKind.LOGISTIC_REGRESSION].model, CalibratedClassifierCV)
+    for kind in ENSEMBLE_KINDS:
+        assert isinstance(classifiers[kind].model, CalibratedClassifierCV)
+
+
+def test_ensembles_have_an_explainer_model_baseline_does_not(classifiers) -> None:
+    """explainer_model backs SHAP's TreeExplainer for the two calibrated
+    ensembles (which TreeExplainer can't look inside); the baseline is never
+    calibrated, so it needs no separate explainer model."""
+    assert classifiers[ClassifierKind.LOGISTIC_REGRESSION].explainer_model is None
+    for kind in ENSEMBLE_KINDS:
+        assert classifiers[kind].explainer_model is not None
+
+
+def test_base_model_property_resolves_to_the_uncalibrated_estimator(classifiers) -> None:
+    baseline = classifiers[ClassifierKind.LOGISTIC_REGRESSION]
+    assert baseline.base_model is baseline.model
+    for kind in ENSEMBLE_KINDS:
+        clf = classifiers[kind]
+        assert clf.base_model is clf.explainer_model
+        assert not isinstance(clf.base_model, CalibratedClassifierCV)
 
 
 # ---------------------------------------------------------------------------
@@ -201,6 +246,43 @@ def test_evaluate_classifier_standalone_matches_report(dataset, classifiers) -> 
     y_pred = clf.predict(X)
     expected_accuracy = float((y_pred == y.to_numpy()).mean())
     assert metrics.accuracy == pytest.approx(expected_accuracy)
+
+
+# ---------------------------------------------------------------------------
+# Probability calibration (FE-2.1.1: "calibrated probability scores")
+# ---------------------------------------------------------------------------
+def _multiclass_brier_score(proba: pd.DataFrame, y_true: pd.Series) -> float:
+    """Mean squared error between predicted class probabilities and the
+    one-hot true label, averaged over samples - the standard multi-class Brier
+    score (lower is better; 0.0 is a perfectly calibrated, confident model)."""
+    onehot = pd.get_dummies(y_true)[proba.columns].to_numpy(dtype=float)
+    return float(np.mean(np.sum((proba.to_numpy() - onehot) ** 2, axis=1)))
+
+
+@pytest.mark.parametrize("kind", ENSEMBLE_KINDS)
+def test_calibration_improves_brier_score_on_held_out_data(
+    calibration_check_classifiers, held_out_split, kind
+) -> None:
+    """FE-2.1.1's whole point: predict_proba for RF/XGBoost must be genuinely
+    calibrated, not just each model's raw vote fractions. Verified directly by
+    comparing Brier score against the SAME model with identical hyperparameters
+    and training data but no calibration layer (`explainer_model`), on a
+    held-out split neither view was trained on - isolating the calibration
+    step as the only difference being measured."""
+    _train_df, test_df = held_out_split
+    clf = calibration_check_classifiers[kind]
+    X_test, y_test = features_and_labels(test_df)
+
+    calibrated_proba = clf.predict_proba(X_test)
+
+    raw_proba_arr = clf.explainer_model.predict_proba(X_test[FEATURE_COLUMNS].to_numpy())
+    class_names = clf.label_encoder.inverse_transform(np.arange(len(clf.label_encoder.classes_)))
+    raw_proba = pd.DataFrame(raw_proba_arr, columns=class_names, index=X_test.index)
+
+    calibrated_brier = _multiclass_brier_score(calibrated_proba, y_test)
+    raw_brier = _multiclass_brier_score(raw_proba, y_test)
+
+    assert calibrated_brier < raw_brier
 
 
 # ---------------------------------------------------------------------------
