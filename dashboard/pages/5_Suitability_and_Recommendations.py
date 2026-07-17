@@ -12,7 +12,6 @@ from dashboard.backend import get_classifiers, render_sidebar
 from ai_module.classification import ClassifierKind
 from ai_module.recommendation_engine import recommend, store_recommendation
 from ai_module.suitability_analysis import (
-    SemiconductorApplication,
     all_application_defect_estimates,
     classify_suitability,
 )

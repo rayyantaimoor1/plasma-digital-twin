@@ -53,7 +53,6 @@ import xgboost as xgb
 from digital_twin.dataset_generation import (
     DEFAULT_SEED,
     FEATURE_COLUMNS,
-    LABEL_COLUMN,
     features_and_labels,
     random_split,
     region_based_split,
