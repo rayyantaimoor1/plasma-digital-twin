@@ -93,15 +93,41 @@ if hm_points:
         st.caption(f"Selected pair **{vx} → {vy}**: R²={drill_reg.r_squared:.3f}, "
                    f"slope={drill_reg.slope:.3g}, p={drill_reg.p_value:.2g}")
 
-st.markdown("**Key parameter–output relationships**")
+st.markdown("**Key parameter–output relationships** — box/lasso-select points in any "
+            "scatter to cross-filter the parallel coordinates below")
 plots = key_relationship_plots(sweep)
 plot_cols = st.columns(len(plots))
-for col, ((x, y), (fig, reg)) in zip(plot_cols, plots.items()):
-    col.plotly_chart(fig, use_container_width=True)
+# The scatter selections ARE the shared cross-filter state (UX U5). A nonce baked
+# into each widget key lets the Clear button reset every scatter at once. All keys
+# are tc_-prefixed and read only on this page, so the filter can never affect
+# another page's charts (no cross-page state leak).
+nonce = st.session_state.setdefault("tc_xfilter_nonce", 0)
+selected_rows: set[int] = set()
+for i, (col, ((x, y), (fig, reg))) in enumerate(zip(plot_cols, plots.items())):
+    ev = col.plotly_chart(fig, use_container_width=True,
+                          on_select="rerun", key=f"tc_scatter_{i}_{nonce}")
     col.caption(f"{x} → {y}: R²={reg.r_squared:.3f}")
+    for pt in ev.selection.points:
+        if pt.get("curve_number", 0) == 0:  # trace 0 = observations, not the fit line
+            ridx = pt.get("point_index", pt.get("point_number"))
+            if ridx is not None:
+                selected_rows.add(int(ridx))
 
-st.markdown("**Parallel coordinates**")
-st.plotly_chart(parallel_coordinates_plot(sweep), use_container_width=True)
+# Apply the shared subset to the parallel coordinates below. View-only: this selects
+# a subset of the already-computed sweep rows, it never re-simulates anything, so the
+# heatmap and insights (kept on the full sweep) remain the stable reference.
+filtered = sorted(r for r in selected_rows if 0 <= r < len(sweep))
+if filtered:
+    fc1, fc2 = st.columns([3, 1])
+    fc1.caption(f"🔎 Cross-filter active: **{len(filtered)} of {len(sweep)}** points selected "
+                "above — the parallel coordinates below show only these.")
+    if fc2.button("Clear selection", key="tc_clear_xfilter"):
+        st.session_state["tc_xfilter_nonce"] = nonce + 1
+        st.rerun()
+
+st.markdown("**Parallel coordinates**" + (" (cross-filtered)" if filtered else ""))
+pc_frame = sweep.iloc[filtered] if filtered else sweep
+st.plotly_chart(parallel_coordinates_plot(pc_frame), use_container_width=True, key="tc_parcoords")
 
 st.markdown("**Automated correlation insights**")
 insights = correlation_insights(sweep)
