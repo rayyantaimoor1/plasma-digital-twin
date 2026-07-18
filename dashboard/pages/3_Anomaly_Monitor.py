@@ -72,7 +72,25 @@ timeline = anomaly_timeline_plot(
     list(range(len(sequence))), list(scores), severities,
     detector.warning_threshold, detector.critical_threshold,
 )
-st.plotly_chart(timeline, use_container_width=True)
+timeline_event = st.plotly_chart(
+    timeline, use_container_width=True,
+    on_select="rerun", key="am_anomaly_timeline",  # click a run to inspect it (UX U4)
+)
+# Drill-in: clicking a run on the timeline shows its score, severity and the
+# detector's root-cause hint. View-only — indexes into the already-scored sequence.
+tl_points = timeline_event.selection.points
+if tl_points:
+    idx = tl_points[0].get("point_index", tl_points[0].get("point_number"))
+    if idx is not None and 0 <= idx < len(sequence):
+        sev = severities[idx]
+        d1, d2, d3 = st.columns(3)
+        d1.metric("Selected run", f"#{idx}")
+        d2.metric("Anomaly score", f"{float(scores[idx]):.3f}", help="lower = more anomalous")
+        d3.metric("Severity", sev.value)
+        if sev != AnomalySeverity.NORMAL:
+            st.caption(f"Root-cause hint: {detector.root_cause(sequence.iloc[[idx]])[0]}")
+        else:
+            st.caption("Root-cause hint: — (this run scores as normal)")
 
 st.divider()
 

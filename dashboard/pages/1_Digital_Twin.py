@@ -13,6 +13,7 @@ from digital_twin.physics_engine import simulate
 from digital_twin.physics_validation import benchmark_summary_table, te_vs_pressure_validation_plot
 from digital_twin.sensitivity_analysis import (
     paired_sweep_heatmap,
+    parameter_effect_curve,
     sensitivity_bar_chart,
     sensitivity_ranking,
 )
@@ -55,7 +56,19 @@ def _render_sensitivity(oat, sweep) -> None:
         ranking = sensitivity_ranking(oat, output_metric)
         st.dataframe(pd.DataFrame(ranking, columns=["parameter", "sensitivity"]), use_container_width=True)
     with col2:
-        st.plotly_chart(sensitivity_bar_chart(oat, output_metric), use_container_width=True)
+        bar_event = st.plotly_chart(
+            sensitivity_bar_chart(oat, output_metric), use_container_width=True,
+            on_select="rerun", key="dt_sensitivity_bar",  # click a bar to drill in (UX U4)
+        )
+    # Drill-in: clicking a parameter's bar shows that parameter's full effect curve.
+    # View-only — the clicked bar's category is a parameter name already in `oat`.
+    bar_points = bar_event.selection.points
+    if bar_points:
+        picked_param = bar_points[0].get("x")
+        if picked_param in oat:
+            st.markdown(f"**Effect curve for `{picked_param}`** (selected from the bar chart)")
+            st.plotly_chart(parameter_effect_curve(oat[picked_param], output_metric),
+                            use_container_width=True, key="dt_effect_curve")
 
     st.markdown("**Paired sweep heatmap** — RF power vs pressure")
     st.plotly_chart(paired_sweep_heatmap(sweep, output_metric), use_container_width=True)

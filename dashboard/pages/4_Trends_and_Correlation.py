@@ -16,6 +16,7 @@ from ai_module.correlation_analysis import (
     correlation_matrix,
     key_relationship_plots,
     parallel_coordinates_plot,
+    scatter_with_regression,
 )
 from ai_module.trend_analysis import (
     TRACKED_METRICS,
@@ -74,7 +75,23 @@ st.divider()
 st.subheader("Multi-parameter correlation analysis (Sub-Module 2.4)")
 sweep = get_correlation_sweep()
 corr = correlation_matrix(sweep)
-st.plotly_chart(correlation_heatmap(corr), use_container_width=True)
+heatmap_event = st.plotly_chart(
+    correlation_heatmap(corr), use_container_width=True,
+    on_select="rerun", key="tc_corr_heatmap",  # click a cell to drill into that pair (UX U4)
+)
+# Drill-in: clicking a heatmap cell shows that variable pair's scatter + regression.
+# View-only — the cell's x/y are column names already present in `sweep`.
+hm_points = heatmap_event.selection.points
+if hm_points:
+    vx, vy = hm_points[0].get("x"), hm_points[0].get("y")
+    if vx in sweep.columns and vy in sweep.columns:
+        drill_fig, drill_reg = scatter_with_regression(sweep, vx, vy)
+        # Unique key: the drilled pair can equal a key-relationship scatter below
+        # (e.g. rf_power_w → reactivity_index), and two unkeyed identical figures
+        # collide on Streamlit's auto-generated element id.
+        st.plotly_chart(drill_fig, use_container_width=True, key="tc_corr_drill")
+        st.caption(f"Selected pair **{vx} → {vy}**: R²={drill_reg.r_squared:.3f}, "
+                   f"slope={drill_reg.slope:.3g}, p={drill_reg.p_value:.2g}")
 
 st.markdown("**Key parameter–output relationships**")
 plots = key_relationship_plots(sweep)
