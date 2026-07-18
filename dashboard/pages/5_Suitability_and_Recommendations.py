@@ -47,7 +47,8 @@ st.caption(
     "Every recommendation is re-run through the digital twin — the reported effect "
     "is a real re-simulated outcome, never unverified advisory text (principle #5)."
 )
-use_classifier = st.checkbox("Rank using the ML classifier's class-transition prediction", value=True)
+use_classifier = st.checkbox("Rank using the ML classifier's class-transition prediction", value=True,
+                             key="sr_use_classifier")  # persist across navigation (UX U1)
 classifier = get_classifiers()[ClassifierKind.RANDOM_FOREST] if use_classifier else None
 recommendations = recommend(config, classifier=classifier)
 

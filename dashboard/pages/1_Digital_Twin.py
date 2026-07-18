@@ -39,6 +39,7 @@ output_metric = st.selectbox(
     ["process_quality", "uniformity_index", "reactivity_index", "etch_rate_nm_min",
      "electron_temperature_ev", "plasma_density_m3"],
     index=0,
+    key="dt_output_metric",  # persist the choice across reruns / page navigation (UX U1)
 )
 oat = run_full_oat_analysis(ChamberParameters(config.rf_power_w, config.pressure_mtorr), n_points=15)
 col1, col2 = st.columns(2)

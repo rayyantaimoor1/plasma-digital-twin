@@ -57,7 +57,7 @@ st.divider()
 
 # --- k-fold cross-validation (FE-2.7.3) ---
 st.subheader("k-fold cross-validation (Sub-Module 2.7)")
-k = st.slider("Number of folds (k)", 3, 8, 5)
+k = st.slider("Number of folds (k)", 3, 8, 5, key="mt_kfolds")  # persist across navigation (UX U1)
 cv = run_cross_validation(dataset, k=k)
 st.dataframe(cv.aggregate_table(), use_container_width=True)
 

@@ -39,6 +39,7 @@ st.divider()
 st.subheader("SHAP explainability (Sub-Module 2.1)")
 model_choice = st.selectbox(
     "Model to explain", [k.value for k in ClassifierKind], index=1,
+    key="ai_model_choice",  # persist the choice across reruns / page navigation (UX U1)
 )
 kind = ClassifierKind(model_choice)
 explanation = explain_configuration(config.rf_power_w, config.pressure_mtorr, classifiers[kind], background)

@@ -55,7 +55,7 @@ else:
         "uniformity_index": q, "electron_temperature_ev": 3.0 + q,
     })
 
-metric = st.selectbox("Trend metric", TRACKED_METRICS, index=1)
+metric = st.selectbox("Trend metric", TRACKED_METRICS, index=1, key="tc_trend_metric")  # persist across navigation (UX U1)
 reports = analyze_session_trends(frame, metrics=[metric])
 report = reports[metric]
 st.plotly_chart(report.figure, use_container_width=True)

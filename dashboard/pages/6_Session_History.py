@@ -21,7 +21,8 @@ st.title("🗄️ Session History & Comparison (Sub-Module 1.4)")
 
 # --- save the current operating point as a session ---
 st.subheader("Save current experiment")
-mode_choice = st.selectbox("Tag with experiment mode", ["(none)"] + [m.value for m in ExperimentMode])
+mode_choice = st.selectbox("Tag with experiment mode", ["(none)"] + [m.value for m in ExperimentMode],
+                           key="sh_mode_tag")  # persist across navigation (UX U1)
 if st.button("💾 Save current configuration as a session"):
     result = simulate(config.rf_power_w, config.pressure_mtorr, rf_voltage_v=config.rf_voltage_v)
     params = ChamberParameters(rf_power_w=config.rf_power_w, pressure_mtorr=config.pressure_mtorr)
@@ -56,6 +57,7 @@ else:
 
     # --- comparative suitability across sessions (FE-2.5.4) ---
     st.subheader("Comparative suitability across sessions (Sub-Module 2.5)")
-    app_choice = st.selectbox("Target application", [a.value for a in SemiconductorApplication])
+    app_choice = st.selectbox("Target application", [a.value for a in SemiconductorApplication],
+                              key="sh_target_app")  # persist across navigation (UX U1)
     ranked = compare_sessions_for_application(records, SemiconductorApplication(app_choice))
     st.dataframe(ranked, use_container_width=True)
