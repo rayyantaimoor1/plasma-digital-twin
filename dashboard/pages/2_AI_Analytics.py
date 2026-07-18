@@ -37,20 +37,32 @@ st.divider()
 
 # --- SHAP explainability (FE-2.1.2) ---
 st.subheader("SHAP explainability (Sub-Module 2.1)")
-model_choice = st.selectbox(
-    "Model to explain", [k.value for k in ClassifierKind], index=1,
-    key="ai_model_choice",  # persist the choice across reruns / page navigation (UX U1)
-)
-kind = ClassifierKind(model_choice)
-explanation = explain_configuration(config.rf_power_w, config.pressure_mtorr, classifiers[kind], background)
-st.caption(f"Per-prediction feature contributions for the **{explanation.predicted_class}** prediction:")
-contrib = pd.Series(explanation.feature_contributions).sort_values(key=abs, ascending=False)
-st.bar_chart(contrib)
 
-X, _y = features_and_labels(load_dataset())
-importance = global_feature_importance(classifiers[kind], X.sample(60, random_state=1), background)
-st.caption("Global feature importance (mean |SHAP value| across the dataset):")
-st.bar_chart(importance)
+
+@st.fragment
+def _render_shap(rf_power_w, pressure_mtorr, classifiers, background) -> None:
+    """Model picker + SHAP charts, scoped as a fragment so switching the explained
+    model re-runs ONLY this block, not the conformal/uncertainty section below it
+    (which is independent of the model choice) — DASHBOARD_UX_REVIEW.md U2. Purely
+    presentational: the same model at the same operating point yields the same SHAP
+    contributions."""
+    model_choice = st.selectbox(
+        "Model to explain", [k.value for k in ClassifierKind], index=1,
+        key="ai_model_choice",  # persist the choice across reruns / page navigation (UX U1)
+    )
+    kind = ClassifierKind(model_choice)
+    explanation = explain_configuration(rf_power_w, pressure_mtorr, classifiers[kind], background)
+    st.caption(f"Per-prediction feature contributions for the **{explanation.predicted_class}** prediction:")
+    contrib = pd.Series(explanation.feature_contributions).sort_values(key=abs, ascending=False)
+    st.bar_chart(contrib)
+
+    X, _y = features_and_labels(load_dataset())
+    importance = global_feature_importance(classifiers[kind], X.sample(60, random_state=1), background)
+    st.caption("Global feature importance (mean |SHAP value| across the dataset):")
+    st.bar_chart(importance)
+
+
+_render_shap(config.rf_power_w, config.pressure_mtorr, classifiers, background)
 
 st.divider()
 

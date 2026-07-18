@@ -57,9 +57,20 @@ st.divider()
 
 # --- k-fold cross-validation (FE-2.7.3) ---
 st.subheader("k-fold cross-validation (Sub-Module 2.7)")
-k = st.slider("Number of folds (k)", 3, 8, 5, key="mt_kfolds")  # persist across navigation (UX U1)
-cv = run_cross_validation(dataset, k=k)
-st.dataframe(cv.aggregate_table(), use_container_width=True)
+
+
+@st.fragment
+def _render_cross_validation(dataset) -> None:
+    """k selector + CV table, scoped as a fragment so changing k re-runs ONLY the
+    cross-validation, not the expensive SHAP feature-importance comparison below it
+    (which is independent of k) — DASHBOARD_UX_REVIEW.md U2. Purely presentational:
+    the same dataset and k give the same fold metrics."""
+    k = st.slider("Number of folds (k)", 3, 8, 5, key="mt_kfolds")  # persist across navigation (UX U1)
+    cv = run_cross_validation(dataset, k=k)
+    st.dataframe(cv.aggregate_table(), use_container_width=True)
+
+
+_render_cross_validation(dataset)
 
 st.divider()
 

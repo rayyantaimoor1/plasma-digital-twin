@@ -47,16 +47,26 @@ st.caption(
     "Every recommendation is re-run through the digital twin — the reported effect "
     "is a real re-simulated outcome, never unverified advisory text (principle #5)."
 )
-use_classifier = st.checkbox("Rank using the ML classifier's class-transition prediction", value=True,
-                             key="sr_use_classifier")  # persist across navigation (UX U1)
-classifier = get_classifiers()[ClassifierKind.RANDOM_FOREST] if use_classifier else None
-recommendations = recommend(config, classifier=classifier)
+@st.fragment
+def _render_recommendations(config) -> None:
+    """Ranking-mode toggle + recommendation cards, scoped as a fragment so toggling
+    the classifier ranking (or clicking a "Log" button) re-runs ONLY this block —
+    not the suitability scorecard and defect-risk bootstrap above it
+    (DASHBOARD_UX_REVIEW.md U2). Purely presentational: the same config and toggle
+    state produce the same re-simulated recommendations."""
+    use_classifier = st.checkbox("Rank using the ML classifier's class-transition prediction", value=True,
+                                 key="sr_use_classifier")  # persist across navigation (UX U1)
+    classifier = get_classifiers()[ClassifierKind.RANDOM_FOREST] if use_classifier else None
+    recommendations = recommend(config, classifier=classifier)
 
-for i, rec in enumerate(recommendations, 1):
-    with st.container(border=True):
-        st.markdown(f"**{i}. {rec.action_text}**  &nbsp; (quality {rec.quality_delta:+.3f})")
-        st.write(rec.prediction_text)
-        st.caption(rec.rationale)
-        if st.button("Log this recommendation", key=f"log_rec_{i}"):
-            store_recommendation(rec, session_id=None)
-            st.success("Recommendation logged with its quantified predicted effect.")
+    for i, rec in enumerate(recommendations, 1):
+        with st.container(border=True):
+            st.markdown(f"**{i}. {rec.action_text}**  &nbsp; (quality {rec.quality_delta:+.3f})")
+            st.write(rec.prediction_text)
+            st.caption(rec.rationale)
+            if st.button("Log this recommendation", key=f"log_rec_{i}"):
+                store_recommendation(rec, session_id=None)
+                st.success("Recommendation logged with its quantified predicted effect.")
+
+
+_render_recommendations(config)

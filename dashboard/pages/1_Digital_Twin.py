@@ -34,25 +34,39 @@ st.divider()
 
 # --- parameter sensitivity (Sub-Module 1.5) ---
 st.subheader("Parameter sensitivity analysis (Sub-Module 1.5)")
-output_metric = st.selectbox(
-    "Output metric",
-    ["process_quality", "uniformity_index", "reactivity_index", "etch_rate_nm_min",
-     "electron_temperature_ev", "plasma_density_m3"],
-    index=0,
-    key="dt_output_metric",  # persist the choice across reruns / page navigation (UX U1)
-)
-oat = run_full_oat_analysis(ChamberParameters(config.rf_power_w, config.pressure_mtorr), n_points=15)
-col1, col2 = st.columns(2)
-with col1:
-    st.markdown("**Sensitivity ranking** (which parameter matters most)")
-    ranking = sensitivity_ranking(oat, output_metric)
-    st.dataframe(pd.DataFrame(ranking, columns=["parameter", "sensitivity"]), use_container_width=True)
-with col2:
-    st.plotly_chart(sensitivity_bar_chart(oat, output_metric), use_container_width=True)
 
-st.markdown("**Paired sweep heatmap** — RF power vs pressure")
+
+@st.fragment
+def _render_sensitivity(oat, sweep) -> None:
+    """Metric picker + sensitivity charts, scoped as a fragment so changing the
+    output metric re-runs ONLY this block — not the whole page (the full simulation
+    vector above and the physics-validation section below stay put). This is the
+    responsiveness fix in DASHBOARD_UX_REVIEW.md U2. The sweeps are computed once in
+    the page body and passed in, so a metric switch just re-draws the existing data;
+    a genuine operating-point change (sidebar) triggers a normal full rerun that
+    recomputes them. Purely presentational: identical inputs → identical charts."""
+    output_metric = st.selectbox(
+        "Output metric",
+        ["process_quality", "uniformity_index", "reactivity_index", "etch_rate_nm_min",
+         "electron_temperature_ev", "plasma_density_m3"],
+        index=0,
+        key="dt_output_metric",  # persist the choice across reruns / page navigation (UX U1)
+    )
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**Sensitivity ranking** (which parameter matters most)")
+        ranking = sensitivity_ranking(oat, output_metric)
+        st.dataframe(pd.DataFrame(ranking, columns=["parameter", "sensitivity"]), use_container_width=True)
+    with col2:
+        st.plotly_chart(sensitivity_bar_chart(oat, output_metric), use_container_width=True)
+
+    st.markdown("**Paired sweep heatmap** — RF power vs pressure")
+    st.plotly_chart(paired_sweep_heatmap(sweep, output_metric), use_container_width=True)
+
+
+oat = run_full_oat_analysis(ChamberParameters(config.rf_power_w, config.pressure_mtorr), n_points=15)
 sweep = run_paired_sweep("rf_power_w", "pressure_mtorr", n_x=12, n_y=12)
-st.plotly_chart(paired_sweep_heatmap(sweep, output_metric), use_container_width=True)
+_render_sensitivity(oat, sweep)
 
 st.divider()
 
