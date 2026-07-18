@@ -11,7 +11,11 @@ import streamlit as st
 from dashboard.backend import get_classifiers, get_defect_estimates, render_sidebar
 from ai_module.classification import ClassifierKind
 from ai_module.recommendation_engine import recommend, store_recommendation
-from ai_module.suitability_analysis import classify_suitability
+from ai_module.suitability_analysis import (
+    SUITABILITY_WINDOWS,
+    SemiconductorApplication,
+    classify_suitability,
+)
 
 st.set_page_config(page_title="Suitability & Recommendations", page_icon="🎯", layout="wide")
 config = render_sidebar()
@@ -22,10 +26,30 @@ st.title("🎯 Semiconductor Suitability & Recommendations")
 st.subheader("Semiconductor process suitability (Sub-Module 2.5)")
 scorecard = classify_suitability(config.rf_power_w, config.pressure_mtorr, rf_voltage_v=config.rf_voltage_v)
 st.caption(f"Ion bombardment energy at this operating point: **{scorecard.ion_energy_ev:.1f} eV**")
-st.dataframe(scorecard.to_dataframe(), use_container_width=True)
+score_df = scorecard.to_dataframe()
+# Row selection drills into one application's window + this point's compliance —
+# view-only (DASHBOARD_UX_REVIEW.md U7). on_select only reads the picked row; the
+# scorecard itself is unchanged.
+sel = st.dataframe(
+    score_df, use_container_width=True,
+    on_select="rerun", selection_mode="single-row", key="sr_scorecard_table",
+)
 best = scorecard.best_application()
 st.metric("Best-fit application", best.value,
           help=f"{scorecard.ratings[best].overall_compliance_pct:.0f}% window compliance")
+
+picked = sel.selection.rows
+if picked:
+    app = SemiconductorApplication(score_df.iloc[picked[0]]["application"])
+    window = SUITABILITY_WINDOWS[app]
+    rating = scorecard.ratings[app]
+    with st.container(border=True):
+        st.markdown(f"**{app.value}** — selected application detail")
+        d1, d2, d3 = st.columns(3)
+        d1.metric("Ion-energy window", f"{window.ion_energy_min_ev:.0f}–{window.ion_energy_max_ev:.0f} eV")
+        d2.metric("Ion-energy compliance", f"{rating.ion_energy_compliance_pct:.0f}%")
+        d3.metric("Defect compliance", f"{rating.defect_compliance_pct:.0f}%")
+        st.caption(window.rationale)
 
 with st.expander("Application-specific defect-risk confidence intervals (FE-2.5.3)"):
     estimates = get_defect_estimates(config.rf_power_w, config.pressure_mtorr, n_bootstrap=80)

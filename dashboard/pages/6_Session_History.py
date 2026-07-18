@@ -53,7 +53,19 @@ db.close()
 if len(summary) == 0:
     st.info("No sessions saved yet. Save the current configuration above to begin building history.")
 else:
-    st.dataframe(summary, use_container_width=True)
+    # Row selection drills into one stored session — view-only (DASHBOARD_UX_REVIEW.md
+    # U7). on_select only reads which existing row the user picked; nothing is
+    # recomputed, so no stored data changes.
+    sel = st.dataframe(
+        summary, use_container_width=True,
+        on_select="rerun", selection_mode="single-row", key="sh_summary_table",
+    )
+    picked = sel.selection.rows
+    if picked:
+        st.markdown("**Selected session — full detail**")
+        detail = summary.iloc[[picked[0]]].T
+        detail.columns = ["value"]
+        st.dataframe(detail, use_container_width=True)
 
     # --- comparative suitability across sessions (FE-2.5.4) ---
     st.subheader("Comparative suitability across sessions (Sub-Module 2.5)")
