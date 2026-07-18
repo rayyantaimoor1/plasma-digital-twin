@@ -8,13 +8,10 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 import pandas as pd
 import streamlit as st
 
-from dashboard.backend import get_classifiers, render_sidebar
+from dashboard.backend import get_classifiers, get_defect_estimates, render_sidebar
 from ai_module.classification import ClassifierKind
 from ai_module.recommendation_engine import recommend, store_recommendation
-from ai_module.suitability_analysis import (
-    all_application_defect_estimates,
-    classify_suitability,
-)
+from ai_module.suitability_analysis import classify_suitability
 
 st.set_page_config(page_title="Suitability & Recommendations", page_icon="🎯", layout="wide")
 config = render_sidebar()
@@ -31,7 +28,7 @@ st.metric("Best-fit application", best.value,
           help=f"{scorecard.ratings[best].overall_compliance_pct:.0f}% window compliance")
 
 with st.expander("Application-specific defect-risk confidence intervals (FE-2.5.3)"):
-    estimates = all_application_defect_estimates(config.rf_power_w, config.pressure_mtorr, n_bootstrap=80)
+    estimates = get_defect_estimates(config.rf_power_w, config.pressure_mtorr, n_bootstrap=80)
     rows = [
         {"application": app.value, "point_estimate": e.point_estimate,
          "ci_lower": e.ci_lower, "ci_upper": e.ci_upper}

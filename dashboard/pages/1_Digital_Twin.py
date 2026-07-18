@@ -8,14 +8,11 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 import pandas as pd
 import streamlit as st
 
-from dashboard.backend import render_sidebar
-from digital_twin.chamber_config import ChamberParameters
+from dashboard.backend import get_oat_analysis, get_paired_sweep, render_sidebar
 from digital_twin.physics_engine import simulate
 from digital_twin.physics_validation import benchmark_summary_table, te_vs_pressure_validation_plot
 from digital_twin.sensitivity_analysis import (
     paired_sweep_heatmap,
-    run_full_oat_analysis,
-    run_paired_sweep,
     sensitivity_bar_chart,
     sensitivity_ranking,
 )
@@ -64,8 +61,11 @@ def _render_sensitivity(oat, sweep) -> None:
     st.plotly_chart(paired_sweep_heatmap(sweep, output_metric), use_container_width=True)
 
 
-oat = run_full_oat_analysis(ChamberParameters(config.rf_power_w, config.pressure_mtorr), n_points=15)
-sweep = run_paired_sweep("rf_power_w", "pressure_mtorr", n_x=12, n_y=12)
+# Cached on the operating point (OAT) / computed once (paired sweep) — see U3 in
+# DASHBOARD_UX_REVIEW.md. Passing them into the fragment means a metric switch just
+# re-draws them; only a real operating-point change recomputes the OAT.
+oat = get_oat_analysis(config.rf_power_w, config.pressure_mtorr)
+sweep = get_paired_sweep()
 _render_sensitivity(oat, sweep)
 
 st.divider()

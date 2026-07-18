@@ -75,6 +75,40 @@ def get_correlation_sweep() -> pd.DataFrame:
     return simulation_sweep_dataframe(power_step_w=_DATASET_POWER_STEP, pressure_step_mtorr=_DATASET_PRESSURE_STEP)
 
 
+@st.cache_data(show_spinner="Running sensitivity sweep (Sub-Module 1.5)...")
+def get_oat_analysis(rf_power_w: float, pressure_mtorr: float, n_points: int = 15):
+    """Cached one-at-a-time sensitivity sweep (Sub-Module 1.5) for the Digital Twin
+    page. It depends only on the operating point, NOT on which output metric the user
+    is viewing, so caching it lets the metric selectbox (now a fragment) re-draw
+    instantly instead of re-running ~30 physics solves on every switch
+    (DASHBOARD_UX_REVIEW.md U3). Pure memoisation: the cached result is byte-identical
+    to a fresh call, so no numerical output changes."""
+    from digital_twin.chamber_config import ChamberParameters
+    from digital_twin.sensitivity_analysis import run_full_oat_analysis
+    return run_full_oat_analysis(ChamberParameters(rf_power_w, pressure_mtorr), n_points=n_points)
+
+
+@st.cache_data(show_spinner="Computing paired RF-power x pressure sweep (Sub-Module 1.5)...")
+def get_paired_sweep(n_x: int = 12, n_y: int = 12):
+    """Cached RF-power x pressure paired sweep (Sub-Module 1.5). It spans the full
+    operating envelope, so it is independent of BOTH the current operating point and
+    the selected metric and only ever needs computing once per process
+    (DASHBOARD_UX_REVIEW.md U3). Pure memoisation — identical grid to a fresh call."""
+    from digital_twin.sensitivity_analysis import run_paired_sweep
+    return run_paired_sweep("rf_power_w", "pressure_mtorr", n_x=n_x, n_y=n_y)
+
+
+@st.cache_data(show_spinner="Bootstrapping application defect-risk intervals (Sub-Module 2.5)...")
+def get_defect_estimates(rf_power_w: float, pressure_mtorr: float, n_bootstrap: int = 80):
+    """Cached application-specific defect-risk bootstrap (Sub-Module 2.5, FE-2.5.3).
+    It is deterministic (fixed default seed) and independent of the recommendation
+    widgets below it on the Suitability page, so caching stops its bootstrap from
+    re-running on every unrelated rerun (DASHBOARD_UX_REVIEW.md U3). Same seed and
+    inputs -> identical estimates; pure memoisation."""
+    from ai_module.suitability_analysis import all_application_defect_estimates
+    return all_application_defect_estimates(rf_power_w, pressure_mtorr, n_bootstrap=n_bootstrap)
+
+
 @st.cache_resource(show_spinner="Evaluating models on both splits (Sub-Module 2.1)...")
 def get_evaluation_report():
     from ai_module.classification import run_full_evaluation
