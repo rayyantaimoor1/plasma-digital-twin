@@ -190,25 +190,29 @@ def _evaluate_candidate(
     rationale: str,
     classifier: Optional[PlasmaClassifier],
     geometry: ChamberGeometry,
+    class_before: Optional[str],
 ) -> Recommendation:
     """Re-run the candidate through the digital twin and build the quantified
-    recommendation from the REAL predicted outcome (principle #5)."""
+    recommendation from the REAL predicted outcome (principle #5).
+
+    `class_before` is the baseline's predicted class, computed ONCE by the caller
+    and passed in [EFFICIENCY_REVIEW.md F5]: it is identical for every candidate
+    (same baseline), so classifying the baseline per candidate re-ran an identical
+    simulate()+predict for no benefit. It is None exactly when `classifier` is None.
+    """
     candidate_result = simulate(
         candidate.rf_power_w, candidate.pressure_mtorr,
         rf_voltage_v=candidate.rf_voltage_v, geometry=geometry,
     )
     quality_delta = candidate_result.process_quality - baseline_result.process_quality
 
-    class_before = class_after = None
+    class_after = None
     class_delta = 0
     if classifier is not None:
         # Classify on (power, pressure) only - the classifier was trained on
         # data generated without an applied RF voltage, so classifying is done
         # in that same distribution while the physics outcome above uses the full
         # (voltage-aware) simulation.
-        class_before = classify_configuration(
-            baseline.rf_power_w, baseline.pressure_mtorr, classifier, geometry=geometry
-        ).predicted_class
         class_after = classify_configuration(
             candidate.rf_power_w, candidate.pressure_mtorr, classifier, geometry=geometry
         ).predicted_class
@@ -262,6 +266,14 @@ def recommend(
         rf_voltage_v=baseline.rf_voltage_v, geometry=geometry,
     )
 
+    # Classify the baseline ONCE (it is the same for every candidate) rather than
+    # re-classifying it inside each _evaluate_candidate call [EFFICIENCY_REVIEW.md F5].
+    class_before = None
+    if classifier is not None:
+        class_before = classify_configuration(
+            baseline.rf_power_w, baseline.pressure_mtorr, classifier, geometry=geometry
+        ).predicted_class
+
     seen = {_key(baseline)}
     recommendations: list[Recommendation] = []
     for candidate, rationale in _candidate_moves(baseline, baseline_result):
@@ -271,7 +283,7 @@ def recommend(
             continue
         seen.add(key)
         recommendations.append(
-            _evaluate_candidate(baseline, baseline_result, candidate, rationale, classifier, geometry)
+            _evaluate_candidate(baseline, baseline_result, candidate, rationale, classifier, geometry, class_before)
         )
 
     recommendations.sort(key=lambda r: r.score, reverse=True)

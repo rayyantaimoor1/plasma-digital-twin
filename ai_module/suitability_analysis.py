@@ -218,6 +218,63 @@ class DefectProbabilityEstimate:
     confidence_level: float
 
 
+def _bootstrap_ion_energy_defect_samples(
+    rf_power_w: float,
+    pressure_mtorr: float,
+    n_bootstrap: int,
+    noise_level: float,
+    seed: int,
+    rf_voltage_v: Optional[float],
+    geometry: ChamberGeometry,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Bootstrap `n_bootstrap` noisy simulations at one operating point, returning
+    the (ion_energy_ev, defect_probability) sample arrays [EFFICIENCY_REVIEW.md F3].
+
+    These two arrays are the ONLY per-sample physics an application-specific estimate
+    needs; the rest is per-application window arithmetic. Factoring the bootstrap out
+    lets `all_application_defect_estimates` run it once and reuse it across all four
+    applications instead of four times. The RNG is seeded and drawn in exactly the
+    order the previous inline loop used, so the samples are byte-identical.
+    """
+    rng = np.random.default_rng(seed)
+    ion_energy = np.empty(n_bootstrap)
+    defect = np.empty(n_bootstrap)
+    for i in range(n_bootstrap):
+        result = simulate(
+            rf_power_w, pressure_mtorr, noise_level=noise_level,
+            seed=int(rng.integers(0, 2**32 - 1)), rf_voltage_v=rf_voltage_v, geometry=geometry,
+        )
+        ion_energy[i] = result.ion_energy_ev
+        defect[i] = result.defect_probability
+    return ion_energy, defect
+
+
+def _estimate_from_samples(
+    application: SemiconductorApplication,
+    ion_energy_samples: np.ndarray,
+    defect_samples: np.ndarray,
+    confidence_level: float,
+) -> DefectProbabilityEstimate:
+    """Apply one application's window arithmetic to a shared bootstrap sample set
+    [EFFICIENCY_REVIEW.md F3]. The elementwise operations (abs, max(0, .), min(1, .))
+    are the vectorised equivalents of the previous scalar per-sample loop and give
+    numerically identical results."""
+    window = SUITABILITY_WINDOWS[application]
+    center = (window.ion_energy_min_ev + window.ion_energy_max_ev) / 2.0
+    half_width = (window.ion_energy_max_ev - window.ion_energy_min_ev) / 2.0
+
+    deviation = np.abs(ion_energy_samples - center) / half_width  # 0 at centre, 1 at boundary
+    risk_multiplier = 1.0 + np.maximum(0.0, deviation - 1.0)  # only penalise once OUTSIDE the window
+    samples = np.minimum(1.0, defect_samples * risk_multiplier)
+
+    alpha = 1.0 - confidence_level
+    lower, upper = np.quantile(samples, [alpha / 2.0, 1.0 - alpha / 2.0])
+    return DefectProbabilityEstimate(
+        application=application, point_estimate=float(np.median(samples)),
+        ci_lower=float(lower), ci_upper=float(upper), confidence_level=confidence_level,
+    )
+
+
 def application_defect_estimate(
     rf_power_w: float,
     pressure_mtorr: float,
@@ -245,35 +302,37 @@ def application_defect_estimate(
     """
     if not 0.0 < confidence_level < 1.0:
         raise ValueError("confidence_level must be between 0 and 1.")
-    window = SUITABILITY_WINDOWS[application]
-    center = (window.ion_energy_min_ev + window.ion_energy_max_ev) / 2.0
-    half_width = (window.ion_energy_max_ev - window.ion_energy_min_ev) / 2.0
-
-    rng = np.random.default_rng(seed)
-    samples = np.empty(n_bootstrap)
-    for i in range(n_bootstrap):
-        result = simulate(
-            rf_power_w, pressure_mtorr, noise_level=noise_level,
-            seed=int(rng.integers(0, 2**32 - 1)), rf_voltage_v=rf_voltage_v, geometry=geometry,
-        )
-        deviation = abs(result.ion_energy_ev - center) / half_width  # 0 at centre, 1 at boundary
-        risk_multiplier = 1.0 + max(0.0, deviation - 1.0)  # only penalise once OUTSIDE the window
-        samples[i] = min(1.0, result.defect_probability * risk_multiplier)
-
-    alpha = 1.0 - confidence_level
-    lower, upper = np.quantile(samples, [alpha / 2.0, 1.0 - alpha / 2.0])
-    return DefectProbabilityEstimate(
-        application=application, point_estimate=float(np.median(samples)),
-        ci_lower=float(lower), ci_upper=float(upper), confidence_level=confidence_level,
+    ion_energy, defect = _bootstrap_ion_energy_defect_samples(
+        rf_power_w, pressure_mtorr, n_bootstrap, noise_level, seed, rf_voltage_v, geometry
     )
+    return _estimate_from_samples(application, ion_energy, defect, confidence_level)
 
 
 def all_application_defect_estimates(
-    rf_power_w: float, pressure_mtorr: float, **kwargs
+    rf_power_w: float,
+    pressure_mtorr: float,
+    n_bootstrap: int = 200,
+    noise_level: float = 0.1,
+    confidence_level: float = 0.95,
+    seed: int = DEFAULT_SEED,
+    rf_voltage_v: Optional[float] = None,
+    geometry: ChamberGeometry = DEFAULT_GEOMETRY,
 ) -> dict[SemiconductorApplication, DefectProbabilityEstimate]:
-    """`application_defect_estimate` for every application at once."""
+    """Defect estimate for every application at once [FE-2.5.3, EFFICIENCY_REVIEW.md F3].
+
+    All four applications share the SAME operating point, seed, and noise, so they
+    previously ran four identical bootstraps. This runs the bootstrap ONCE and applies
+    each application's window arithmetic to the shared samples - numerically identical
+    to calling `application_defect_estimate` per application (same seed -> same sample
+    stream), at a quarter of the physics cost.
+    """
+    if not 0.0 < confidence_level < 1.0:
+        raise ValueError("confidence_level must be between 0 and 1.")
+    ion_energy, defect = _bootstrap_ion_energy_defect_samples(
+        rf_power_w, pressure_mtorr, n_bootstrap, noise_level, seed, rf_voltage_v, geometry
+    )
     return {
-        app: application_defect_estimate(rf_power_w, pressure_mtorr, app, **kwargs)
+        app: _estimate_from_samples(app, ion_energy, defect, confidence_level)
         for app in SemiconductorApplication
     }
 

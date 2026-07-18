@@ -109,7 +109,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from digital_twin.physics_engine import ChamberGeometry, simulate
+from digital_twin.physics_engine import ChamberGeometry, apply_measurement_noise, simulate
 from digital_twin.session_manager import DEFAULT_DB_PATH
 
 # ---------------------------------------------------------------------------
@@ -272,10 +272,15 @@ def generate_dataset(
 
                 # Observable features: nominal physics + heteroscedastic measurement
                 # noise (engine's own noise model). Recipe columns stay exact.
+                # The deterministic solve is identical to `nominal` for every replicate,
+                # so we re-apply only the noise step to the already-solved `nominal`
+                # instead of re-solving [EFFICIENCY_REVIEW.md F2]. Seeding a fresh
+                # generator with `noise_seed` reproduces exactly what
+                # simulate(..., noise_level=..., seed=noise_seed) would have produced.
                 noise_seed = int(rng.integers(0, 2**32 - 1))
-                measured = simulate(
-                    float(power), float(pressure),
-                    noise_level=cfg.feature_measurement_noise, seed=noise_seed,
+                measured = apply_measurement_noise(
+                    nominal, float(power), float(pressure),
+                    cfg.feature_measurement_noise, np.random.default_rng(noise_seed),
                 )
                 true_quality, true_defect = _confounded_outcomes(
                     float(power), float(pressure), wall_temp, age, impurity, cfg

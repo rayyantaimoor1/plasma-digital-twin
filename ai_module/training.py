@@ -313,7 +313,10 @@ def run_cross_validation(
     for fold_index, (train_idx, test_idx) in enumerate(skf.split(X, y)):
         train_fold = dataset.iloc[train_idx].reset_index(drop=True)
         test_fold = dataset.iloc[test_idx].reset_index(drop=True)
-        classifiers = train_classifiers(train_fold, seed=seed)
+        # Cross-validation only predicts/evaluates and discards these classifiers -
+        # it never calls shap_values() - so skip the SHAP-only explainer fit
+        # [EFFICIENCY_REVIEW.md F7], roughly halving per-fold ensemble training.
+        classifiers = train_classifiers(train_fold, seed=seed, with_explainer=False)
         X_test, y_test = features_and_labels(test_fold)
         for kind, clf in classifiers.items():
             metrics = evaluate_classifier(clf, X_test, y_test, split_name=f"fold_{fold_index}")

@@ -62,6 +62,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, asdict
+from functools import lru_cache
 from typing import Optional
 
 import numpy as np
@@ -356,10 +357,20 @@ def _discharge_geometry_factors(
 # ---------------------------------------------------------------------------
 # Step 1 - Particle balance  ->  electron temperature Te  [FE-1.2.1]
 # ---------------------------------------------------------------------------
+@lru_cache(maxsize=4096)
 def solve_electron_temperature(
     pressure_mtorr: float, geometry: ChamberGeometry = DEFAULT_GEOMETRY
 ) -> float:
     """Solve the particle balance for electron temperature Te [V/eV].
+
+    Memoised on (pressure_mtorr, geometry) [EFFICIENCY_REVIEW.md F1]. Te is a PURE
+    function of pressure and geometry - it depends on neither RF power nor any
+    stochastic state - and the Brent root-find dominates simulate()'s cost (~84%).
+    Fixed-pressure power sweeps and repeated-pressure workloads therefore re-solve an
+    identical root many times; caching returns the byte-identical value. ChamberGeometry
+    is a frozen dataclass, so it is hashable and safe as a cache key; the small maxsize
+    bounds memory since pressures/geometries come from finite grids. The ValueError for
+    non-positive pressure is raised before returning, so it is never cached.
 
     Steady-state particle balance (ions created = ions lost):
 
@@ -702,6 +713,29 @@ def _apply_noise(
         process_quality=jitter(result.process_quality, 0.0, 1.0),
         defect_probability=jitter(result.defect_probability, 0.0, 1.0),
     )
+
+
+def apply_measurement_noise(
+    result: SimulationResult,
+    rf_power_w: float,
+    pressure_mtorr: float,
+    noise_level: float,
+    rng: np.random.Generator,
+) -> SimulationResult:
+    """Apply heteroscedastic measurement noise to an ALREADY-SOLVED deterministic
+    result, without re-running the particle/power balance [EFFICIENCY_REVIEW.md F2].
+
+    This is exactly the noise step `simulate()` performs internally after its solve.
+    Exposing it lets a caller that already holds the deterministic result for an
+    operating point (e.g. dataset generation, which solves one `nominal` per recipe
+    and then draws many noisy replicates of it) add independent measurement noise
+    without paying for a redundant physics solve. Passing
+    `np.random.default_rng(seed)` reproduces byte-for-byte what
+    `simulate(rf_power_w, pressure_mtorr, noise_level=noise_level, seed=seed)` would
+    return for the same deterministic `result` - the noise draws come from that same
+    fresh generator either way.
+    """
+    return _apply_noise(result, rf_power_w, pressure_mtorr, noise_level, rng)
 
 
 # ---------------------------------------------------------------------------

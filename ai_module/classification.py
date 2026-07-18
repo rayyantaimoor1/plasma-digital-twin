@@ -160,7 +160,7 @@ def _calibrated(estimator: object) -> CalibratedClassifierCV:
 
 
 def train_classifiers(
-    train_df: pd.DataFrame, seed: int = DEFAULT_SEED
+    train_df: pd.DataFrame, seed: int = DEFAULT_SEED, with_explainer: bool = True
 ) -> dict[ClassifierKind, PlasmaClassifier]:
     """Train the baseline and both ensemble classifiers on identical data [FE-2.1.1].
 
@@ -175,6 +175,14 @@ def train_classifiers(
     CalibratedClassifierCV for genuinely calibrated predict_proba output. Both
     fits see the same data and hyperparameters, so this is one predictive model
     exposed through two views, not two models that could disagree.
+
+    `with_explainer` (default True) controls that second, SHAP-only fit
+    [EFFICIENCY_REVIEW.md F7]. Pass False on paths that only predict/evaluate and
+    never call `shap_values()` (e.g. cross-validation) to skip the redundant plain
+    fit of each ensemble - roughly halving ensemble training there. predict and
+    predict_proba are unaffected (they use the calibrated model). With
+    `with_explainer=False`, `explainer_model` is None and `shap_values()` on the
+    ensembles is unavailable - so only use it where SHAP is genuinely never called.
     """
     X, y = features_and_labels(train_df)
     X_arr = X[FEATURE_COLUMNS].to_numpy()
@@ -188,14 +196,14 @@ def train_classifiers(
     baseline.fit(scaler.transform(X_arr), y_enc)
 
     rf_kwargs = dict(n_estimators=200, random_state=seed)
-    rf_explainer = RandomForestClassifier(**rf_kwargs).fit(X_arr, y_enc)
+    rf_explainer = RandomForestClassifier(**rf_kwargs).fit(X_arr, y_enc) if with_explainer else None
     rf_calibrated = _calibrated(RandomForestClassifier(**rf_kwargs)).fit(X_arr, y_enc)
 
     xgb_kwargs = dict(
         n_estimators=200, max_depth=4, learning_rate=0.1, random_state=seed,
         eval_metric="mlogloss",
     )
-    xgb_explainer = xgb.XGBClassifier(**xgb_kwargs).fit(X_arr, y_enc)
+    xgb_explainer = xgb.XGBClassifier(**xgb_kwargs).fit(X_arr, y_enc) if with_explainer else None
     xgb_calibrated = _calibrated(xgb.XGBClassifier(**xgb_kwargs)).fit(X_arr, y_enc)
 
     return {
