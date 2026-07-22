@@ -91,8 +91,8 @@ with col_right:
 
 st.divider()
 st.info(
-    "Panels: **Digital Twin** (simulation, sensitivity, physics validation) · "
-    "**AI Analytics** (classification, SHAP, uncertainty) · **Anomaly Monitor** · "
-    "**Trends & Correlation** · **Suitability & Recommendations** · **Session History** · "
-    "**Model Training**. Open them from the navigation on the left."
+    "Panels: **Digital Twin** (simulation, sensitivity) · **Physics Validation** "
+    "(literature benchmarking) · **AI Analytics** (classification, SHAP, uncertainty) · "
+    "**Anomaly Monitor** · **Trends & Correlation** · **Suitability & Recommendations** · "
+    "**Session History** · **Model Training**. Open them from the navigation on the left."
 )

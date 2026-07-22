@@ -1,5 +1,7 @@
-"""Digital Twin panel: full simulation output, parameter sensitivity (1.5), and
-literature-benchmark physics validation (1.6)."""
+"""Digital Twin panel: full simulation output and parameter sensitivity (1.5).
+
+Literature-benchmark physics validation (1.6) has its own dedicated page —
+see 2_Physics_Validation.py."""
 import pathlib
 import sys
 
@@ -10,7 +12,6 @@ import streamlit as st
 
 from dashboard.backend import get_oat_analysis, get_paired_sweep, render_sidebar
 from digital_twin.physics_engine import simulate
-from digital_twin.physics_validation import benchmark_summary_table, te_vs_pressure_validation_plot
 from digital_twin.sensitivity_analysis import (
     paired_sweep_heatmap,
     parameter_effect_curve,
@@ -21,7 +22,7 @@ from digital_twin.sensitivity_analysis import (
 st.set_page_config(page_title="Digital Twin", page_icon="🌀", layout="wide")
 config = render_sidebar()
 
-st.title("🌀 Digital Twin — Simulation, Sensitivity & Validation")
+st.title("🌀 Digital Twin — Simulation & Sensitivity")
 
 # --- full simulation output vector (Sub-Module 1.2) ---
 st.subheader("Full simulation output (Sub-Module 1.2)")
@@ -80,18 +81,3 @@ def _render_sensitivity(oat, sweep) -> None:
 oat = get_oat_analysis(config.rf_power_w, config.pressure_mtorr)
 sweep = get_paired_sweep()
 _render_sensitivity(oat, sweep)
-
-st.divider()
-
-# --- physics validation against literature (Sub-Module 1.6) ---
-st.subheader("Physics validation vs published reference values (Sub-Module 1.6)")
-st.caption(
-    "Semi-quantitative benchmark against independently-sourced reference values with a "
-    "stated tolerance band. Pass/fail is reported honestly — not every reference point "
-    "is expected to pass, and the failures are shown, not hidden."
-)
-report = benchmark_summary_table()
-st.dataframe(report, use_container_width=True)
-n_pass = int(report["passed"].sum())
-st.metric("Reference points within tolerance", f"{n_pass} / {len(report)}")
-st.plotly_chart(te_vs_pressure_validation_plot(), use_container_width=True)

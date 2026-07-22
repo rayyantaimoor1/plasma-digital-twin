@@ -130,13 +130,14 @@ Streamlit's left-hand page navigation:
 
 | Page | File | Covers |
 |---|---|---|
-| Digital Twin | `1_Digital_Twin.py` | Full simulation output, sensitivity analysis (1.5), physics validation (1.6) |
-| AI Analytics | `2_AI_Analytics.py` | Classification, SHAP explainability (2.1) |
-| Anomaly Monitor | `3_Anomaly_Monitor.py` | Physics-relationship anomaly detection (2.2) |
-| Trends and Correlation | `4_Trends_and_Correlation.py` | Session trend tracking (2.3), correlation analysis (2.4) |
-| Suitability and Recommendations | `5_Suitability_and_Recommendations.py` | Semiconductor suitability (2.5), counterfactual recommendations (2.6) |
-| Session History | `6_Session_History.py` | Multi-session persistence and comparison (1.4) |
-| Model Training | `7_Model_Training.py` | Model registry, cross-validation, MLflow history (2.7) |
+| Digital Twin | `1_Digital_Twin.py` | Full simulation output, sensitivity analysis (1.5) |
+| Physics Validation | `2_Physics_Validation.py` | Literature-benchmark physics validation (1.6) |
+| AI Analytics | `3_AI_Analytics.py` | Classification, SHAP explainability (2.1) |
+| Anomaly Monitor | `4_Anomaly_Monitor.py` | Physics-relationship anomaly detection (2.2) |
+| Trends and Correlation | `5_Trends_and_Correlation.py` | Session trend tracking (2.3), correlation analysis (2.4) |
+| Suitability and Recommendations | `6_Suitability_and_Recommendations.py` | Semiconductor suitability (2.5), counterfactual recommendations (2.6) |
+| Session History | `7_Session_History.py` | Multi-session persistence and comparison (1.4) |
+| Model Training | `8_Model_Training.py` | Model registry, cross-validation, MLflow history (2.7) |
 
 **First load is the slowest step in this whole guide** — it generates the synthetic
 training dataset, trains all three classifiers, fits the anomaly detector, and
