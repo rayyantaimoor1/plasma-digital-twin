@@ -18,10 +18,14 @@ import dataclasses
 import pytest
 
 from ai_module.classification import ClassifierKind, classify_configuration
-from ai_module.suitability_analysis import all_application_defect_estimates
+from ai_module.suitability_analysis import (
+    SemiconductorApplication,
+    all_application_defect_estimates,
+    classify_suitability,
+)
 from digital_twin.chamber_config import ChamberParameters
 from digital_twin.physics_engine import simulate
-from digital_twin.physics_validation import benchmark_summary_table
+from digital_twin.physics_validation import run_literature_benchmarks
 from digital_twin.session_manager import ExperimentDatabase
 from reactor_control_room.backend import app as backend
 
@@ -73,19 +77,67 @@ def test_suitability_endpoint_matches_direct_call() -> None:
 
 
 def test_physics_validation_endpoint_matches_direct_call() -> None:
-    """/api/physics-validation rows tie back to benchmark_summary_table() cell by
-    cell, with full float precision preserved (no rounding in serialization)."""
+    """/api/physics-validation rows tie back field-by-field to the BenchmarkResult
+    objects from run_literature_benchmarks(), including the source citation and the
+    deviation_pct/passed properties, with full float precision (no rounding)."""
     endpoint = backend.api_physics_validation()
-    df = benchmark_summary_table()
+    results = run_literature_benchmarks()
 
-    assert len(endpoint) == len(df)
-    assert [r["name"] for r in endpoint] == df["name"].tolist()
-    for i, row in enumerate(endpoint):
-        assert row["computed_value"] == df.iloc[i]["computed_value"]
-        assert row["reference_value"] == df.iloc[i]["reference_value"]
-        assert row["deviation_pct"] == df.iloc[i]["deviation_pct"]
-        assert row["tolerance_pct"] == df.iloc[i]["tolerance_pct"]
-        assert row["passed"] == bool(df.iloc[i]["passed"])
+    assert len(endpoint) == len(results)
+    for row, r in zip(endpoint, results):
+        assert row["name"] == r.name
+        assert row["quantity"] == r.quantity
+        assert row["description"] == r.description
+        assert row["source"] == r.source
+        assert row["computed_value"] == r.computed_value
+        assert row["reference_value"] == r.reference_value
+        assert row["unit"] == r.unit
+        assert row["deviation_pct"] == r.deviation_pct
+        assert row["tolerance_pct"] == r.tolerance_pct
+        assert row["passed"] == r.passed
+
+
+def test_suitability_scorecard_endpoint_matches_direct_call() -> None:
+    """/api/suitability-scorecard ties back to classify_suitability(): best-fit,
+    compliance %, and every application's rating, exactly (deterministic engine)."""
+    endpoint = backend.api_suitability_scorecard(_RF_POWER, _PRESSURE)
+    scorecard = classify_suitability(_RF_POWER, _PRESSURE)
+
+    best = scorecard.best_application()
+    assert endpoint["best_application"] == best.value
+    assert endpoint["best_compliance_pct"] == scorecard.ratings[best].overall_compliance_pct
+    assert endpoint["ion_energy_ev"] == scorecard.ion_energy_ev
+    assert endpoint["defect_probability"] == scorecard.defect_probability
+    assert {r["application"] for r in endpoint["ratings"]} == {a.value for a in scorecard.ratings}
+    for row in endpoint["ratings"]:
+        rating = scorecard.ratings[SemiconductorApplication(row["application"])]
+        assert row["overall_compliance_pct"] == rating.overall_compliance_pct
+        assert row["ion_energy_compliance_pct"] == rating.ion_energy_compliance_pct
+        assert row["defect_compliance_pct"] == rating.defect_compliance_pct
+        assert row["is_suitable"] == rating.is_suitable
+
+
+def test_anomaly_endpoint_matches_direct_call() -> None:
+    """/api/anomaly ties back to the detector's own severity/score/root-cause for
+    every fault mode, healthy and injected. The fault injection is seeded, so the
+    endpoint is deterministic and the comparison is exact."""
+    detector = backend.get_anomaly_detector()
+    for fault in ["none", "pressure_gauge_fault", "electrode_coupling_fault", "te_sensor_drift"]:
+        endpoint = backend.api_anomaly(_RF_POWER, _PRESSURE, fault=fault)
+        df = backend._anomaly_feature_row(_RF_POWER, _PRESSURE, fault)
+        assert endpoint["fault"] == fault
+        assert endpoint["severity"] == detector.severity(df)[0].value
+        assert endpoint["score"] == float(detector.anomaly_score(df)[0])
+        assert endpoint["is_anomaly"] == bool(detector.is_anomaly(df)[0])
+        assert endpoint["root_cause"] == detector.root_cause(df)[0]
+
+
+def test_anomaly_endpoint_rejects_unknown_fault() -> None:
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc_info:
+        backend.api_anomaly(_RF_POWER, _PRESSURE, fault="not_a_real_fault")
+    assert exc_info.value.status_code == 422
 
 
 def test_sessions_endpoints_match_direct_calls(tmp_path, monkeypatch) -> None:

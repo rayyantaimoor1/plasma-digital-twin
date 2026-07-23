@@ -33,17 +33,32 @@ from typing import Any, Optional
 # Streamlit pages use).
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
+import numpy as np
+import pandas as pd
 import psutil
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 # --- existing project functions: the ONLY place any computation happens ---
+from ai_module.anomaly_detection import (
+    AnomalyFault,
+    PlasmaAnomalyDetector,
+    generate_normal_operating_data,
+    inject_anomaly,
+)
 from ai_module.classification import ClassifierKind, classify_configuration, train_classifiers
-from ai_module.suitability_analysis import all_application_defect_estimates
-from digital_twin.dataset_generation import generate_dataset
+from ai_module.suitability_analysis import all_application_defect_estimates, classify_suitability
+from digital_twin.dataset_generation import FEATURE_COLUMNS, generate_dataset
 from digital_twin.physics_engine import simulate
-from digital_twin.physics_validation import benchmark_summary_table
+from digital_twin.physics_validation import run_literature_benchmarks
 from digital_twin.session_manager import ExperimentDatabase
+
+# Valid fault names for the anomaly endpoint: "none" (healthy) plus the three
+# physically-named relationship-violating faults the detector was built around.
+_FAULT_NAMES = frozenset({"none", *(f.value for f in AnomalyFault)})
+# Fixed RNG seed for fault injection so /api/anomaly is deterministic (identity-testable).
+_ANOMALY_SEED = 0
 
 # Mirror the Streamlit dashboard's dataset parameters (see dashboard/backend.py)
 # so the classifier this backend trains is the SAME one the dashboard trains -
@@ -82,6 +97,27 @@ def get_classifiers():
     return train_classifiers(dataset, with_explainer=False)
 
 
+@lru_cache(maxsize=1)
+def get_anomaly_detector() -> PlasmaAnomalyDetector:
+    """Fit the Isolation-Forest anomaly detector ONCE (cached) on normal operating
+    data, exactly as the dashboard does. No detector logic here - a cached call
+    into ai_module."""
+    return PlasmaAnomalyDetector().fit(generate_normal_operating_data())
+
+
+def _anomaly_feature_row(rf_power_w: float, pressure_mtorr: float, fault: str) -> pd.DataFrame:
+    """Build the single observed-feature row the detector scores. For a healthy
+    run it is simulate()'s own output; for an injected fault it is the existing
+    `inject_anomaly` construction (seeded, so deterministic). No physics is redone
+    here beyond calling those existing functions."""
+    if fault == "none":
+        result = simulate(rf_power_w, pressure_mtorr)
+        return pd.DataFrame([{c: getattr(result, c) for c in FEATURE_COLUMNS}])
+    rng = np.random.default_rng(_ANOMALY_SEED)
+    row = inject_anomaly(rf_power_w, pressure_mtorr, AnomalyFault(fault), rng)
+    return pd.DataFrame([row])[FEATURE_COLUMNS]
+
+
 def open_session_db() -> ExperimentDatabase:
     """Open the session store. Factored into its own function so tests can point
     it at a temporary database. Deliberately not cached: a sqlite connection is
@@ -115,20 +151,62 @@ def _serialize_defect_estimates(estimates) -> dict[str, dict[str, Any]]:
     }
 
 
+def _serialize_benchmarks(results) -> list[dict[str, Any]]:
+    """list[BenchmarkResult] -> plain JSON, one row per check. Reads the dataclass
+    fields plus its `deviation_pct`/`passed` PROPERTIES (which the summary-table
+    DataFrame also exposes) and, additionally, the human `description` and literature
+    `source` citation the Physics Validation page needs. Pure field access - nothing
+    is recomputed."""
+    return [
+        {
+            "name": r.name,
+            "quantity": r.quantity,
+            "description": r.description,
+            "source": r.source,
+            "computed_value": r.computed_value,
+            "reference_value": r.reference_value,
+            "unit": r.unit,
+            "deviation_pct": r.deviation_pct,
+            "tolerance_pct": r.tolerance_pct,
+            "passed": r.passed,
+        }
+        for r in results
+    ]
+
+
+def _serialize_scorecard(scorecard) -> dict[str, Any]:
+    """SuitabilityScorecard -> plain JSON: the operating point, the best-fit
+    application, its compliance %, and every application's SuitabilityRating.
+    Enum fields flattened to their string values. No numbers recomputed."""
+    best = scorecard.best_application()
+    return {
+        "rf_power_w": scorecard.rf_power_w,
+        "pressure_mtorr": scorecard.pressure_mtorr,
+        "ion_energy_ev": scorecard.ion_energy_ev,
+        "defect_probability": scorecard.defect_probability,
+        "best_application": best.value,
+        "best_compliance_pct": scorecard.ratings[best].overall_compliance_pct,
+        "ratings": [
+            dataclasses.asdict(r) | {"application": r.application.value}
+            for r in scorecard.ratings.values()
+        ],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Endpoints - each wraps exactly one existing function
 # ---------------------------------------------------------------------------
-@app.get("/")
+@app.get("/api")
 def root() -> dict[str, Any]:
-    """Service banner + endpoint index."""
+    """Service banner + endpoint index (the frontend itself is served at `/`)."""
     return {
         "service": "Reactor Control Room API",
         "status": "ok",
         "note": "Thin JSON wrapper over the digital twin / AI functions; no math runs here.",
         "endpoints": [
             "/api/simulate", "/api/classify", "/api/suitability",
-            "/api/physics-validation", "/api/sessions",
-            "/api/sessions/{session_id}", "/api/system/stats",
+            "/api/suitability-scorecard", "/api/anomaly", "/api/physics-validation",
+            "/api/sessions", "/api/sessions/{session_id}", "/api/system/stats",
         ],
     }
 
@@ -167,11 +245,49 @@ def api_suitability(
     return _serialize_defect_estimates(estimates)
 
 
+@app.get("/api/suitability-scorecard")
+def api_suitability_scorecard(
+    rf_power_w: float, pressure_mtorr: float, rf_voltage_v: Optional[float] = None
+) -> dict[str, Any]:
+    """AI Verdict: window-compliance scorecard - best-fit application + per-
+    application compliance %. Wraps
+    `ai_module.suitability_analysis.classify_suitability` (the same function the
+    dashboard's best-fit uses, so the two UIs agree)."""
+    scorecard = classify_suitability(rf_power_w, pressure_mtorr, rf_voltage_v=rf_voltage_v)
+    return _serialize_scorecard(scorecard)
+
+
+@app.get("/api/anomaly")
+def api_anomaly(
+    rf_power_w: float, pressure_mtorr: float, fault: str = "none"
+) -> dict[str, Any]:
+    """AI Verdict: relationship-anomaly severity + Isolation-Forest score +
+    root-cause for the current operating point, optionally with an injected fault.
+    Wraps `PlasmaAnomalyDetector` (+ the existing `inject_anomaly`); the detector
+    does all the work."""
+    if fault not in _FAULT_NAMES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown fault {fault!r}; must be one of {sorted(_FAULT_NAMES)}",
+        )
+    detector = get_anomaly_detector()
+    df = _anomaly_feature_row(rf_power_w, pressure_mtorr, fault)
+    return {
+        "fault": fault,
+        "severity": detector.severity(df)[0].value,
+        "score": float(detector.anomaly_score(df)[0]),
+        "is_anomaly": bool(detector.is_anomaly(df)[0]),
+        "root_cause": detector.root_cause(df)[0],
+    }
+
+
 @app.get("/api/physics-validation")
 def api_physics_validation() -> list[dict[str, Any]]:
-    """Physics Validation: the literature-benchmark table, one row per check.
-    Wraps `digital_twin.physics_validation.benchmark_summary_table`."""
-    return _records_from_dataframe(benchmark_summary_table())
+    """Physics Validation: the literature benchmark checks, one row per check,
+    including each check's tolerance verdict and literature source. Wraps
+    `digital_twin.physics_validation.run_literature_benchmarks` (the same call the
+    summary-table builds on, serialized with its source/description fields too)."""
+    return _serialize_benchmarks(run_literature_benchmarks())
 
 
 @app.get("/api/sessions")
@@ -217,3 +333,15 @@ def api_system_stats() -> dict[str, Any]:
             ),
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Serve the companion frontend (the Reactor Control Room UI) at `/` so it is
+# same-origin with the API above - fetches to /api/* need no CORS and one command
+# (uvicorn) serves the whole app. Mounted LAST so every /api/... route is matched
+# first; StaticFiles only handles what's left (index.html, JS, CSS). Guarded on the
+# directory existing so the API still boots if the frontend hasn't been built yet.
+# ---------------------------------------------------------------------------
+_FRONTEND_DIR = pathlib.Path(__file__).resolve().parents[1] / "frontend"
+if _FRONTEND_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=str(_FRONTEND_DIR), html=True), name="frontend")
