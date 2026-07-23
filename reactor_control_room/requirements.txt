@@ -1,0 +1,14 @@
+# Extra dependencies for the Reactor Control Room COMPANION APP only
+# (FUTURE.md item 1). These are intentionally SEPARATE from the project's core
+# requirements.txt and are NOT part of the graded stack locked in CLAUDE.md
+# (Streamlit / Plotly / SQLite / scikit-learn / XGBoost / SHAP / MLflow / MAPIE /
+# SciPy remain exactly as specified for the actual digital twin + AI module).
+#
+# Install into the same virtual environment with:
+#     pip install -r reactor_control_room/requirements.txt
+#
+# Pinned to the versions installed at build time (per CLAUDE.md's "pin exact
+# versions" convention). fastapi pulls in starlette + pydantic transitively.
+fastapi==0.139.0
+uvicorn==0.51.0
+psutil==7.2.2
