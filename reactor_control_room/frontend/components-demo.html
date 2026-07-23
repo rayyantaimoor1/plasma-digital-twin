@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reactor Control Room · Component Library</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css">
+  <style>
+    .demo { padding: 30px 34px 60px; max-width: 1100px; margin: 0 auto; }
+    .demo h1 { font-size: 22px; margin: 0 0 4px; }
+    .demo .lead { color: var(--text-dim); font-size: 13px; margin: 0 0 8px; max-width: 720px; line-height: 1.5; }
+    .demo .badge { display: inline-block; font-family: var(--mono); font-size: 10px; letter-spacing: 0.5px; color: var(--orange); border: 1px solid rgba(251,146,60,0.35); background: rgba(251,146,60,0.06); border-radius: 6px; padding: 5px 10px; margin: 6px 0 26px; }
+    .demo h2 { font-size: 11px; letter-spacing: 1.8px; text-transform: uppercase; color: var(--text-dim); font-weight: 600; margin: 30px 0 14px; border-top: 1px solid var(--border); padding-top: 18px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
+    .two { display: grid; grid-template-columns: minmax(300px, 1.1fr) minmax(260px, 0.9fr); gap: 20px; align-items: start; }
+    .stack { display: flex; flex-direction: column; gap: 12px; }
+  </style>
+</head>
+<body>
+  <div class="demo">
+    <h1>Reactor Control Room — Component Library</h1>
+    <p class="lead">The four shared components (chamber, gauge, comparison bar, sparkline) plus the meter primitive, each rendered here with <strong>live data fetched from the FastAPI backend</strong>. Nothing on this page computes a physics or AI value in JavaScript — every number is fetched. This showcase is the dev harness that proves the library works before the four pages are composed from it.</p>
+    <span class="badge">SIM · argon CCP · 13.56 MHz · every number is live from the backend</span>
+    <div id="demo"></div>
+  </div>
+  <script type="module" src="./components-demo.js"></script>
+</body>
+</html>

@@ -1,0 +1,124 @@
+/* Reactor Control Room - shared design tokens + app chrome.
+ *
+ * Tokens are lifted verbatim from the approved mockup
+ * (mockups/reactor-control-room/) so the built app matches its look exactly.
+ * Component INTERNALS are styled inline in components.js (so each component is
+ * self-contained/portable); this file holds the palette, base reset, and the
+ * app shell (sidebar / main / footer) layout. No data or numbers live here. */
+:root {
+  --bg: #05070A;
+  --panel: #0D1117;
+  --panel-2: #0a0e14;
+  --panel-3: #0b1017;
+  --border: #1B2430;
+  --border-2: #161C26;
+  --border-3: #131A24;
+
+  --text: #E6EDF3;
+  --text-bright: #F0F4F8;
+  --text-dim: #8B949E;
+  --text-mute: #4d5866;
+  --text-mute-2: #5b6672;
+  --text-mute-3: #404b59;
+
+  --purple: #A78BFA;
+  --purple-2: #C4B5FD;
+  --cyan: #38BDF8;
+  --cyan-2: #7dd3fc;
+  --orange: #FB923C;
+
+  --green: #34D399;
+  --amber: #F59E0B;
+  --red: #EF4444;
+
+  --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--cyan); text-decoration: none; }
+a:hover { color: var(--cyan-2); }
+button { font-family: inherit; color: inherit; }
+select { font-family: inherit; }
+::selection { background: rgba(167, 139, 250, 0.3); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; border: 2px solid var(--bg); }
+::-webkit-scrollbar-track { background: transparent; }
+@keyframes rcrBlink { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+.mono { font-family: var(--mono); }
+
+/* ---- app shell ---- */
+.app { display: flex; height: 100vh; width: 100%; overflow: hidden; }
+
+.sidebar {
+  width: 190px; flex: none; background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; padding: 20px 12px 16px; gap: 4px; z-index: 2;
+}
+.brand { display: flex; align-items: center; gap: 11px; padding: 4px 8px 18px; }
+.brand-ring {
+  position: relative; width: 34px; height: 34px; border-radius: 50%;
+  border: 2px solid var(--purple);
+  box-shadow: 0 0 14px rgba(167, 139, 250, 0.6), inset 0 0 10px rgba(167, 139, 250, 0.25);
+  display: flex; align-items: center; justify-content: center; flex: none;
+}
+.brand-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--purple); box-shadow: 0 0 8px var(--purple); }
+.brand-name { font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: 1px; color: var(--text); }
+.brand-sub { font-size: 9px; letter-spacing: 2px; color: var(--text-dim); text-transform: uppercase; }
+
+.nav-item {
+  position: relative; display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+  padding: 11px 12px 11px 16px; background: transparent; border: none; border-radius: 8px;
+  cursor: pointer; width: 100%; text-align: left;
+}
+.nav-item:hover { background: #131A24; }
+.nav-item .nav-idx { font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px; color: var(--text-dim); }
+.nav-item .nav-label { font-size: 13px; font-weight: 500; color: var(--text-dim); }
+.nav-item.active .nav-label { font-weight: 600; color: var(--text-bright); }
+.nav-item.active::before {
+  content: ''; position: absolute; left: 3px; top: 10px; bottom: 10px; width: 3px;
+  border-radius: 2px; background: var(--purple); box-shadow: 0 0 10px var(--purple);
+}
+.sidebar-foot { padding: 10px 12px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 5px; }
+.sidebar-foot .tag { font-family: var(--mono); font-size: 9px; letter-spacing: 1px; color: var(--orange); }
+.sidebar-foot .note { font-size: 9.5px; line-height: 1.4; color: var(--text-mute); }
+
+.stage { flex: 1; min-width: 0; display: flex; flex-direction: column;
+  background: radial-gradient(1200px 640px at 32% -12%, #0a0f17 0%, var(--bg) 70%); }
+.main { flex: 1; min-height: 0; overflow: auto; padding: 26px 30px 24px; }
+
+.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+.page-head h1 { margin: 0; font-size: 25px; font-weight: 600; letter-spacing: 0.3px; color: var(--text); }
+.page-head p { margin: 5px 0 0; font-size: 13px; color: var(--text-dim); }
+.live-pill { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px; color: var(--cyan); }
+.live-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); animation: rcrBlink 1.8s ease-in-out infinite; }
+
+.section-rule { display: flex; align-items: center; gap: 12px; margin: 0 0 14px; }
+.section-rule .label { font-size: 11px; letter-spacing: 1.8px; text-transform: uppercase; color: var(--text-dim); font-weight: 600; }
+.section-rule .line { flex: 1; height: 1px; background: var(--border); }
+.section-rule .meta { font-family: var(--mono); font-size: 10px; color: var(--text-mute); }
+
+/* ---- footer system strip ---- */
+.footer {
+  flex: none; border-top: 1px solid var(--border); background: var(--panel);
+  padding: 11px 24px; display: flex; align-items: center; gap: 26px; flex-wrap: wrap; z-index: 2;
+}
+.footer .sys { font-family: var(--mono); font-size: 10px; letter-spacing: 2px; color: var(--text-mute); }
+.footer .metric { display: flex; align-items: center; gap: 10px; }
+.footer .metric .name { font-size: 10px; letter-spacing: 1px; color: var(--text-dim); font-weight: 600; }
+.footer .metric .val { font-family: var(--mono); font-size: 12px; color: var(--text); width: 40px; }
+.footer .gpu { display: flex; align-items: center; gap: 9px; }
+.footer .gpu .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-mute); flex: none; }
+.footer .gpu .txt { font-size: 11px; color: var(--text-dim); }
+
+.loading { color: var(--text-dim); font-size: 13px; padding: 40px 4px; display: flex; align-items: center; gap: 10px; }
+.loading .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); animation: rcrBlink 1.2s ease-in-out infinite; }
+.err { color: var(--red); font-size: 12.5px; font-family: var(--mono); padding: 20px 4px; }
