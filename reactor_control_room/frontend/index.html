@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reactor Control Room</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-ring"><span class="brand-dot"></span></span>
+        <div style="display:flex;flex-direction:column;gap:1px">
+          <span class="brand-name">REACTOR</span>
+          <span class="brand-sub">Control Room</span>
+        </div>
+      </div>
+      <div id="nav"></div>
+      <div style="flex:1"></div>
+      <div class="sidebar-foot">
+        <span class="tag">SIM · argon CCP · 13.56 MHz</span>
+        <span class="note">0D global model. Live view of the plasma-digital-twin engine.</span>
+      </div>
+    </aside>
+
+    <div class="stage">
+      <main class="main" id="main"></main>
+      <footer class="footer">
+        <span class="sys">SYSTEM</span>
+        <div class="metric">
+          <span class="name">CPU</span>
+          <div id="cpu-meter" style="width:118px"></div>
+          <span class="val" id="cpu-val">—</span>
+        </div>
+        <div class="metric">
+          <span class="name">RAM</span>
+          <div id="ram-meter" style="width:118px"></div>
+          <span class="val" id="ram-val">—</span>
+        </div>
+        <div style="flex:1"></div>
+        <div class="gpu">
+          <span class="dot"></span>
+          <span class="txt" id="gpu-note">GPU — idle</span>
+        </div>
+      </footer>
+    </div>
+  </div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
