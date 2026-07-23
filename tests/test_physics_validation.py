@@ -44,11 +44,26 @@ def test_every_result_has_required_metadata(results) -> None:
         assert r.name
         assert r.quantity
         assert r.description
-        assert "Turner" in r.source and "2014" in r.source
+        # Every check must carry a substantive, dated citation string. Most cite
+        # Turner (2014); the two additional K_iz checks (FUTURE.md item 5) cite
+        # their own independent sources, so we no longer require "Turner" here.
+        assert len(r.source) > 20
         assert r.unit
         assert math.isfinite(r.computed_value)
         assert math.isfinite(r.reference_value)
         assert r.tolerance_pct > 0.0
+
+
+def test_turner_checks_cite_turner(results) -> None:
+    """Every check EXCEPT the two additional independent K_iz sources should still
+    cite Turner 2014 - guards against a citation being dropped or mislabelled."""
+    additional = {
+        "ionization_rate_coefficient_at_3eV_vs_jimenez_redondo",
+        "ionization_rate_coefficient_at_3eV_vs_chabert",
+    }
+    for r in results:
+        if r.name not in additional:
+            assert "Turner" in r.source and "2014" in r.source
 
 
 def test_deviation_and_passed_are_internally_consistent(results) -> None:
@@ -92,6 +107,41 @@ def test_ionization_rate_coefficient_check_honestly_fails(results) -> None:
     assert r.tolerance_pct == TOLERANCE_STANDARD_PCT
     assert not r.passed
     assert r.deviation_pct < -TOLERANCE_STANDARD_PCT
+
+
+def test_additional_kiz_sources_present_independent_and_rederivable(results) -> None:
+    """FUTURE.md item 5: two ADDITIONAL, independently published K_iz(3 eV)
+    reference points beyond Turner, so the (honestly failing) K_iz check rests on
+    a published spread rather than one number. Structural only - deliberately
+    makes NO claim about whether they pass, since their tolerance was fixed a
+    priori and we don't tune to the outcome."""
+    from digital_twin.physics_validation import _chabert_kiz, _jimenez_redondo_kiz
+
+    jr = next(r for r in results if r.name == "ionization_rate_coefficient_at_3eV_vs_jimenez_redondo")
+    ch = next(r for r in results if r.name == "ionization_rate_coefficient_at_3eV_vs_chabert")
+    turner_kiz = next(r for r in results if r.name == "ionization_rate_coefficient_at_3eV")
+
+    for r in (jr, ch):
+        assert r.quantity == "K_iz(3 eV) (m^3/s)"
+        assert r.tolerance_pct == TOLERANCE_STANDARD_PCT
+        # All three K_iz checks must benchmark the SAME model quantity - only the
+        # reference differs - exactly like the two Te checks do.
+        assert r.computed_value == pytest.approx(turner_kiz.computed_value)
+        # Sane argon K_iz(3 eV) magnitude in SI m^3/s - guards the cm^3->m^3
+        # conversion on the Jimenez-Redondo formula against a units slip.
+        assert 1e-17 < r.reference_value < 1e-15
+
+    # Reference values are re-derivable from each published FORMULA (not a
+    # hand-copied scalar), and the two sources genuinely differ from each other.
+    assert jr.reference_value == pytest.approx(_jimenez_redondo_kiz(3.0))
+    assert ch.reference_value == pytest.approx(_chabert_kiz(3.0))
+    # Genuinely different anchors (compare RELATIVE difference - pytest.approx's
+    # default 1e-12 absolute tolerance would call any two ~1e-16 values "equal").
+    assert abs(jr.reference_value - ch.reference_value) / ch.reference_value > 0.1
+
+    # Independence is documented honestly in the citation strings themselves.
+    assert "INDEPENDENT" in jr.source.upper()
+    assert "Chabert" in ch.source and "NOT" in ch.source
 
 
 def test_not_every_check_passes() -> None:

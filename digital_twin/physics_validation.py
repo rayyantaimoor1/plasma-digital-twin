@@ -79,9 +79,36 @@ tightened or loosened after seeing the results:
 None of these tolerance values were adjusted after computing the deviations they
 gate; they were fixed from the FYP scope document's own suggested band before the
 comparison functions below were written.
+
+================================================================================
+ADDITIONAL INDEPENDENT K_iz SOURCES (FUTURE.md item 5)
+================================================================================
+The Turner check anchors the ionization rate coefficient K_iz(3 eV) against ONE
+source, and that check honestly FAILS - which, from a single source, is weak
+evidence. Two further independently published argon K_iz values are therefore
+added for the SAME quantity, so the check rests on a published spread rather than
+one number:
+
+  * Jimenez-Redondo et al., RSC Advances 4, 62030 (2014), reaction 14:
+    K_iz = 2.53e-8 * Te^0.5 * exp(-16.3/Te) cm^3/s -> ~1.9e-16 m^3/s at 3 eV.
+    GENUINELY INDEPENDENT of Turner/L&L (Madrid Ar/H2 set, different functional
+    form; rate from Mendez et al., PCCP 12, 4239, 2010).
+  * Chabert & Braithwaite, 'Physics of RF Plasmas' (2011) Ch.5, as tabulated by
+    Powis et al., arXiv:2510.01977 (2025): K_iz = 5.0e-14 * exp(-17.44/Te) m^3/s
+    -> ~1.5e-16 m^3/s at 3 eV. A citable second anchor, but the SAME L&L/Godyak
+    lineage as this engine - flagged as such, not passed off as independent.
+
+Same discipline as everything above: both numbers were web-verified against the
+actual published document (the whole point of FUTURE.md item 5 is to never launder
+a memory-recalled number as a citation - this project already hit one such bug,
+noted at the top of physics_engine.py); each is encoded as its published FORMULA
+so it stays re-derivable; and both use the same pre-fixed +-30% band as the Turner
+K_iz check (a rate coefficient seen through an exponential), set BEFORE the model's
+K_iz(3 eV) was computed - not tuned to force a pass or a fail either way.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import pandas as pd
@@ -133,6 +160,63 @@ _REF_DENSITY_PIC_CENTRE = 3.8e15    # m^-3
 
 TOLERANCE_TIGHT_PCT = 15.0   # single direct ratios (no exponential/root-find)
 TOLERANCE_STANDARD_PCT = 30.0  # solved/compound quantities; top of FYP doc's band
+
+# ---------------------------------------------------------------------------
+# ADDITIONAL independent K_iz(Te) reference sources (FUTURE.md item 5)
+# ---------------------------------------------------------------------------
+# The single Turner anchor on K_iz above (and it currently FAILS) is weak evidence
+# on its own. These two ADDITIONAL, independently published argon ground-state
+# ionization rate coefficients give further reference points for the SAME quantity
+# (K_iz at Te=3 eV), so the check rests on a published spread rather than one
+# number. Both were web-VERIFIED by reading the source document (never recalled
+# from memory) - the same discipline the Turner source was chosen under, and the
+# non-negotiable constraint in FUTURE.md item 5. Each is encoded as its published
+# FORMULA (not a hand-copied scalar) so the reference value is transparently
+# re-derivable at any Te. K_iz(Te) depends on Te ALONE, so - exactly like the
+# Turner K_iz check - the comparison is geometry-independent by construction:
+# there is no chamber geometry in the quantity to launder.
+
+# Source A - GENUINELY INDEPENDENT of the Turner / Lieberman-Lichtenberg lineage.
+# A Madrid-group Ar/H2 discharge chemistry set whose argon ionization rate has a
+# structurally DIFFERENT form (a Te^0.5 prefactor and 16.3 eV in the exponent, not
+# the textbook L&L 17.44 eV form), traced to their own cross-section work.
+JIMENEZ_REDONDO_2014_CITATION = (
+    "M. Jimenez-Redondo, M. Cueto, J. L. Domenech, I. Tanarro, V. J. Herrero, "
+    "'Ion kinetics in Ar/H2 cold plasmas: the relevance of ArH+', RSC Advances "
+    "4(107), 62030-62041 (2014), doi:10.1039/C4RA13102A - Table 1, reaction 14: "
+    "K_iz = 2.53e-8 * Te^0.5 * exp(-16.3/Te) cm^3/s (Te in eV, Maxwellian "
+    "electrons); rate from Mendez, Tanarro & Herrero, PCCP 12, 4239 (2010). "
+    "GENUINELY INDEPENDENT of the Turner / Lieberman-Lichtenberg lineage."
+)
+
+# Source B - a distinct, citable published expression, but SAME L&L / Godyak
+# lineage as this project's engine. Flagged honestly, not dressed up as
+# independent: it is a consistency anchor against the canonical simplified form,
+# not a second independent measurement.
+CHABERT_2011_VIA_POWIS_2025_CITATION = (
+    "P. Chabert & N. Braithwaite, 'Physics of Radio-Frequency Plasmas', "
+    "Cambridge Univ. Press (2011), Ch. 5, as tabulated by A. T. Powis, D. Corona "
+    "Rivera, A. Khrabry, I. D. Kaganovich, 'Accelerating kinetic plasma "
+    "simulations with machine learning generated initial conditions', "
+    "arXiv:2510.01977 (2025), Appendix B: K_iz = 5.0e-14 * exp(-17.44/Te) m^3/s "
+    "(Te in eV). NOTE: Chabert Ch.5 descends from the SAME Lieberman-Lichtenberg / "
+    "Godyak lineage this project is built on - a citable second anchor, but NOT "
+    "independent of that lineage."
+)
+
+
+def _jimenez_redondo_kiz(te_v: float) -> float:
+    """Argon ground-state ionization rate coefficient of Jimenez-Redondo et al.
+    (2014), converted from their published cm^3/s to this project's SI m^3/s
+    (x1e-6). Encoded as the published formula, not a recalled scalar, so the
+    reference value stays transparently re-derivable [FUTURE.md item 5]."""
+    return 2.53e-8 * te_v ** 0.5 * math.exp(-16.3 / te_v) * 1e-6  # cm^3/s -> m^3/s
+
+
+def _chabert_kiz(te_v: float) -> float:
+    """Argon ground-state ionization rate coefficient of Chabert & Braithwaite
+    (2011) Ch.5, as tabulated by Powis et al. (2025). Already SI (m^3/s)."""
+    return 5.0e-14 * math.exp(-17.44 / te_v)
 
 
 @dataclass
@@ -245,6 +329,42 @@ def run_literature_benchmarks() -> list[BenchmarkResult]:
             source=TURNER_2014_CITATION,
             computed_value=my_kiz_at_3ev,
             reference_value=_REF_KIZ_AT_3EV,
+            unit="m^3/s",
+            tolerance_pct=TOLERANCE_STANDARD_PCT,
+        ),
+        BenchmarkResult(
+            name="ionization_rate_coefficient_at_3eV_vs_jimenez_redondo",
+            quantity="K_iz(3 eV) (m^3/s)",
+            description=(
+                "Same computed K_iz(3 eV) as the Turner check above, compared to a "
+                "SECOND, genuinely independent published source (Jimenez-Redondo et "
+                "al. 2014 - a Madrid-group Ar/H2 chemistry set, structurally "
+                "different rate-coefficient form). Adds a second reference point for "
+                "the one quantity where the Turner check fails, so the K_iz check "
+                "rests on a published spread (Turner 2.2, this source ~1.9, Chabert "
+                "~1.5, all x1e-16 m^3/s) rather than one number. Geometry-independent "
+                "by construction - K_iz is a function of Te alone."
+            ),
+            source=JIMENEZ_REDONDO_2014_CITATION,
+            computed_value=my_kiz_at_3ev,
+            reference_value=_jimenez_redondo_kiz(3.0),
+            unit="m^3/s",
+            tolerance_pct=TOLERANCE_STANDARD_PCT,
+        ),
+        BenchmarkResult(
+            name="ionization_rate_coefficient_at_3eV_vs_chabert",
+            quantity="K_iz(3 eV) (m^3/s)",
+            description=(
+                "Same computed K_iz(3 eV) as above, compared to Chabert & "
+                "Braithwaite (2011) Ch.5's simplified argon form (as tabulated by "
+                "Powis et al. 2025). A distinct, citable published expression, but "
+                "the SAME L&L/Godyak lineage this engine is built on (see source "
+                "note) - a consistency anchor against the canonical simplified form, "
+                "not an independent measurement. Geometry-independent (Te only)."
+            ),
+            source=CHABERT_2011_VIA_POWIS_2025_CITATION,
+            computed_value=my_kiz_at_3ev,
+            reference_value=_chabert_kiz(3.0),
             unit="m^3/s",
             tolerance_pct=TOLERANCE_STANDARD_PCT,
         ),
