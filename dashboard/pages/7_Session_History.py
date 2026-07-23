@@ -73,3 +73,10 @@ else:
                               key="sh_target_app")  # persist across navigation (UX U1)
     ranked = compare_sessions_for_application(records, SemiconductorApplication(app_choice))
     st.dataframe(ranked, use_container_width=True)
+    st.download_button(
+        "⬇️ Download ranking as CSV",
+        data=ranked.to_csv(index=False).encode("utf-8"),
+        file_name=f"suitability_ranking_{SemiconductorApplication(app_choice).value}.csv",
+        mime="text/csv",
+        key="sh_ranking_csv_download",
+    )

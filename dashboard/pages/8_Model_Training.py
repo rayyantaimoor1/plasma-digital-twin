@@ -36,6 +36,11 @@ metrics_df = pd.DataFrame([
     for m in report.metrics
 ])
 st.dataframe(metrics_df, use_container_width=True)
+st.download_button(
+    "⬇️ Download evaluation metrics as CSV",
+    data=metrics_df.to_csv(index=False).encode("utf-8"),
+    file_name="evaluation_metrics.csv", mime="text/csv", key="mt_metrics_csv_download",
+)
 
 sig_df = pd.DataFrame([
     {"ensemble": t.ensemble, "split": t.split_name,
@@ -44,6 +49,11 @@ sig_df = pd.DataFrame([
     for t in report.significance_tests
 ])
 st.dataframe(sig_df, use_container_width=True)
+st.download_button(
+    "⬇️ Download significance tests as CSV",
+    data=sig_df.to_csv(index=False).encode("utf-8"),
+    file_name="significance_tests.csv", mime="text/csv", key="mt_significance_csv_download",
+)
 if sig_df["significant"].any():
     st.success("At least one ensemble model significantly outperforms the baseline.")
 else:
@@ -67,7 +77,13 @@ def _render_cross_validation(dataset) -> None:
     the same dataset and k give the same fold metrics."""
     k = st.slider("Number of folds (k)", 3, 8, 5, key="mt_kfolds")  # persist across navigation (UX U1)
     cv = run_cross_validation(dataset, k=k)
-    st.dataframe(cv.aggregate_table(), use_container_width=True)
+    cv_table = cv.aggregate_table()
+    st.dataframe(cv_table, use_container_width=True)
+    st.download_button(
+        "⬇️ Download cross-validation results as CSV",
+        data=cv_table.to_csv(index=False).encode("utf-8"),
+        file_name=f"cross_validation_k{k}.csv", mime="text/csv", key="mt_cv_csv_download",
+    )
 
 
 _render_cross_validation(dataset)
