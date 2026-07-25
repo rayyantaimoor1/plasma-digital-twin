@@ -209,6 +209,20 @@ def _sigmoid(x: float) -> float:
 # ---------------------------------------------------------------------------
 # Argon rate coefficients and energy-loss terms (functions of Te only).
 # Te is always in volts (equivalently eV) throughout this module.
+#
+# !! K_iz AND K_exc ARE RATIO-COUPLED - NEVER REFIT ONE ALONE !!
+# `total_energy_per_pair` -> `collisional_energy_loss` sees only the RATIO
+# K_exc/K_iz (E_c = E_IZ + E_EXC*(K_exc/K_iz) + elastic term), and n_e is
+# proportional to 1/E_T, so the ratio propagates straight into the density.
+# Both fits below are "representative" (unattributed) parameterizations that are
+# wrong in the SAME direction, which is why their ratio - and hence E_c - comes
+# out plausible. Replacing just one with a properly-sourced fit BREAKS that
+# cancellation: this was tried with Voronov (1997) for K_iz on 2026-07-25 and,
+# although the fit itself was excellent (0.15% max error), E_c(3 eV) fell 61.5 ->
+# 36.8 V, outside L&L Fig. 3.17's published 50-70 V argon band, and the
+# Sub-Module 1.6 benchmark dropped 6/9 -> 4/9. The change was reverted.
+# If you re-source these, do BOTH together and gate on E_c(3 eV) landing inside
+# 50-70 V BEFORE looking at the Sub-Module 1.6 benchmark. See FUTURE.md item 1.
 # ---------------------------------------------------------------------------
 def ionization_rate_coeff(te_v: float) -> float:
     """Electron-impact ionization rate coefficient K_iz(Te) for argon [m^3/s].
