@@ -11,8 +11,14 @@ alone, and each is defensible in the FYP evaluation.
 |---|---|
 | [Kiz_Refit_Attempt_Report.docx](Kiz_Refit_Attempt_Report.docx) | Full written post-mortem (~11 pages): source verification, pre-registered methodology, results, root-cause analysis, the revert decision, and an anticipated-questions section for the viva. |
 | [Kiz_Refit_Attempt_Presentation.pptx](Kiz_Refit_Attempt_Presentation.pptx) | 15-slide companion deck for presenting this one decision on its own, with speaker notes on every slide. |
-| [make_figures.py](make_figures.py) | Generates all seven figures. Every plotted value is **computed live** from the project's own `physics_engine`, not transcribed — so the analysis is reproducible. |
+| [make_figures.py](make_figures.py) | Generates all nine figures. Every plotted value is **computed live** from the project's own `physics_engine`, not transcribed — so the analysis is reproducible. |
+| [measure_before_after.py](measure_before_after.py) | Measures physics outputs and `simulate()` runtime before vs after, by monkey-patching the candidate fit **in memory only** — the engine on disk is never touched. |
 | [figures/](figures) | The generated PNGs, embedded in both documents above. |
+
+Both documents cover, in order: **why** a fix was attempted, **how** the approach and
+source were chosen, **what** was done during the attempt, **why** it could not be kept
+and was reverted, and a closing **before/after comparison of engine credibility and
+performance** — with figures and tables throughout.
 
 ## Attempt 1 — Argon ionization rate coefficient K_iz  (2026-07-25)
 
@@ -44,6 +50,22 @@ from comparable sources, and confirm `E_c`(3 eV) lands inside 50–70 V **before
 consulting the Sub-Module 1.6 benchmark at all. See `FUTURE.md` item 1 and the
 warning comment above the rate coefficients in
 [physics_engine.py](../digital_twin/physics_engine.py).
+
+### Net effect on the engine
+
+| | Before (retained) | After refit (rejected) |
+|---|---|---|
+| K_iz provenance | unattributed | **cited** (the one gain) |
+| Internal consistency of the coefficient pair | matched | **mixed** |
+| Independent L&L Fig. 3.17 check | **PASS** (61.56 V) | **FAIL** (36.84 V) |
+| Sub-Module 1.6 checks | 6 / 9 | 4 / 9 |
+| Test suite (non-dashboard) | 366 passed, 0 failed | 363 passed, 3 failed |
+| `simulate()` runtime | ~24–27 µs/call | no measurable change |
+
+One dimension improved, four degraded. Provenance is a property of the
+*documentation*; agreement with published physics is a property of the *model*.
+Trading the second for the first is the wrong trade for a physics engine — which is
+why the change was reverted despite achieving exactly what it set out to achieve.
 
 ## Reproducing the figures
 

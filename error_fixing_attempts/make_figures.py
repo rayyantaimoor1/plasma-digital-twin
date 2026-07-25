@@ -315,8 +315,89 @@ def fig7():
     plt.close(fig)
 
 
+# ---------------------------------------------------------------------------
+# Fig 8 - credibility scorecard: before vs after, across every dimension that
+# actually constitutes "credibility" for this engine (not just the 1.6 score).
+# ---------------------------------------------------------------------------
+CRED = [
+    # (dimension, before 0-1, after 0-1, before label, after label)
+    ("K_iz provenance\n(traceable source?)",        0.15, 1.00, "unattributed", "cited, 0.15%"),
+    ("K_exc provenance\n(traceable source?)",       0.15, 0.15, "unattributed", "unattributed"),
+    ("Internal consistency\nof the coefficient pair", 1.00, 0.20, "matched pair", "MIXED"),
+    ("Sub-Module 1.6\nchecks passing",              6 / 9, 4 / 9, "6/9", "4/9"),
+    ("Independent L&L\nFig. 3.17 check",            1.00, 0.00, "PASS", "FAIL"),
+    ("Test suite\n(non-dashboard)",                 1.00, 363 / 366, "all pass", "3 fail"),
+]
+
+
+def fig8():
+    labels = [c[0] for c in CRED]
+    before = np.array([c[1] for c in CRED])
+    after = np.array([c[2] for c in CRED])
+    y = np.arange(len(CRED))
+    h = 0.36
+    fig, ax = plt.subplots(figsize=(8.6, 5.0))
+    ax.barh(y + h / 2, before * 100, height=h, color=C_OLD, label="Before (retained engine)")
+    ax.barh(y - h / 2, after * 100, height=h, color=C_NEW, alpha=0.6, hatch="///",
+            edgecolor="white", linewidth=0.4, label="After refit (rejected)")
+    for i, c in enumerate(CRED):
+        ax.text(c[1] * 100 + 1.5, i + h / 2, c[3], va="center", fontsize=8, color=C_OLD)
+        ax.text(c[2] * 100 + 1.5, i - h / 2, c[4], va="center", fontsize=8,
+                color=C_NEW, fontweight="bold" if c[2] < c[1] else "normal")
+    ax.set_yticks(y)
+    ax.set_yticklabels(labels, fontsize=8.5)
+    ax.invert_yaxis()
+    ax.set_xlim(0, 128)
+    ax.set_xticks([0, 25, 50, 75, 100])
+    ax.set_xlabel("Relative standing on each dimension  (%)")
+    ax.set_title("Engine credibility, before vs after the refit\n"
+                 "One dimension improved (K$_{iz}$ provenance); four degraded",
+                 fontsize=10.5, loc="left")
+    # Legend below the axes: inside the plot it collided with the bottom row's bars.
+    ax.legend(frameon=False, fontsize=9, loc="upper center",
+              bbox_to_anchor=(0.5, -0.13), ncol=2)
+    fig.tight_layout()
+    fig.savefig(OUT / "fig8_credibility_scorecard.png")
+    plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# Fig 9 - computational performance: measured, and honestly noise-limited
+# ---------------------------------------------------------------------------
+def fig9():
+    """Measured medians from measure_before_after.py (warmed cache, 9x500 calls)."""
+    labels = ["Before\n(current engine)", "After\n(rejected refit)", "Before\n(re-measured)"]
+    vals = [27.4, 25.9, 24.0]
+    cols = [C_OLD, C_NEW, C_OLD]
+    fig, ax = plt.subplots(figsize=(7.4, 4.0))
+    bars = ax.bar(labels, vals, color=cols, width=0.55)
+    for b, a in zip(bars, (1.0, 0.65, 0.5)):   # per-bar alpha (ax.bar takes a scalar only)
+        b.set_alpha(a)
+    for b, v in zip(bars, vals):
+        ax.text(b.get_x() + b.get_width() / 2, v + 0.6, f"{v:.1f}", ha="center",
+                fontsize=10.5, fontweight="bold")
+    # Grey band = spread between two timings of IDENTICAL code (the noise floor).
+    lo, hi = min(vals[0], vals[2]), max(vals[0], vals[2])
+    ax.axhspan(lo, hi, color="#8a8a8a", alpha=0.16, zorder=0)
+    # Axes-fraction coords keep this clear of the y-axis tick labels.
+    ax.text(0.015, 0.975,
+            "Grey band = spread between two timings of the SAME code (bars 1 and 3).\n"
+            "The before/after gap is smaller than that band, so it is measurement\n"
+            "noise — not a real performance change.",
+            transform=ax.transAxes, fontsize=8.2, color="#555",
+            va="top", ha="left", linespacing=1.55)
+    ax.set_ylabel("simulate() median  (μs per call)")
+    ax.set_ylim(0, 42)
+    ax.set_title("Computational performance: unchanged\n"
+                 "Both fits share the form A·Tₑⁿ·exp(−E/Tₑ), so the operation count is identical",
+                 fontsize=10.5, loc="left")
+    fig.tight_layout()
+    fig.savefig(OUT / "fig9_runtime.png")
+    plt.close(fig)
+
+
 if __name__ == "__main__":
-    for f in (fig1, fig2, fig3, fig4, fig5, fig6, fig7):
+    for f in (fig1, fig2, fig3, fig4, fig5, fig6, fig7, fig8, fig9):
         f()
         print("wrote", f.__name__)
     # Sanity values quoted in the report / slides
