@@ -188,6 +188,71 @@ export function createComparisonBar() {
 }
 
 // ---------------------------------------------------------------------------
+// SHAP CONTRIBUTION BARS: diverging horizontal bars showing how much each
+// observable feature pushed the current operating point TOWARD (right, positive)
+// or AWAY FROM (left, negative) its predicted class.
+//
+// The SHAP values themselves are computed by the backend; this only maps them to
+// bar widths. Bars are scaled against the largest |value| so the strongest driver
+// always fills the half-width, making relative influence readable at a glance.
+// ---------------------------------------------------------------------------
+const FEATURE_LABEL = {
+  rf_power_w: 'RF power',
+  pressure_mtorr: 'Chamber pressure',
+  electron_temperature_ev: 'Electron temp Tₑ',
+  plasma_density_m3: 'Plasma density nₑ',
+  ion_flux_m2s: 'Ion flux',
+  sheath_voltage_v: 'Sheath voltage',
+  ion_energy_ev: 'Ion energy',
+  reactivity_index: 'Reactivity',
+  uniformity_index: 'Uniformity',
+  etch_rate_nm_min: 'Etch rate',
+  process_quality: 'Process quality',
+  defect_probability: 'Defect probability',
+};
+const prettyFeature = (k) => FEATURE_LABEL[k] || k.replace(/_/g, ' ');
+
+export function createShapBars() {
+  const root = el('div', 'display:flex;flex-direction:column;gap:6px');
+  function update(contributions, { predictedClass = '', maxRows = 8 } = {}) {
+    root.innerHTML = '';
+    const rows = Object.entries(contributions)
+      .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+      .slice(0, maxRows);
+    if (rows.length === 0) return;
+    const peak = Math.max(...rows.map(([, v]) => Math.abs(v))) || 1;
+
+    for (const [name, val] of rows) {
+      const frac = Math.abs(val) / peak;            // 0..1 of the half-width
+      const pos = val >= 0;
+      const row = el('div', 'display:flex;align-items:center;gap:10px');
+      row.innerHTML = `<span style="width:132px;flex:none;font-size:11px;color:var(--text-dim);text-align:right">${prettyFeature(name)}</span>`;
+      // diverging track: zero line in the middle
+      const track = el('div', 'position:relative;flex:1;height:16px');
+      track.innerHTML = `
+        <div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--border)"></div>
+        <div style="position:absolute;top:2px;height:12px;border-radius:3px;
+             ${pos ? `left:50%;background:var(--green)` : `right:50%;background:var(--red)`};
+             width:${(frac * 50).toFixed(2)}%;transition:width 450ms cubic-bezier(0.22,1,0.36,1)"></div>`;
+      row.appendChild(track);
+      row.appendChild(el('span',
+        `width:62px;flex:none;font-family:var(--mono);font-size:10.5px;text-align:right;color:${pos ? 'var(--green)' : 'var(--red)'}`,
+        (val >= 0 ? '+' : '') + val.toFixed(3)));
+      root.appendChild(row);
+    }
+    // axis legend
+    root.appendChild(el('div',
+      'display:flex;align-items:center;gap:10px;margin-top:4px;padding-top:7px;border-top:1px solid var(--border-3)',
+      `<span style="width:132px;flex:none"></span>`
+      + `<div style="flex:1;display:flex;justify-content:space-between;font-size:9px;color:var(--text-mute)">`
+      + `<span>← pushes AWAY from “${predictedClass}”</span>`
+      + `<span>pushes TOWARD “${predictedClass}” →</span></div>`
+      + `<span style="width:62px;flex:none"></span>`));
+  }
+  return { el: root, update };
+}
+
+// ---------------------------------------------------------------------------
 // SPARKLINE: a trend line across the session record (Session Replay).
 // ---------------------------------------------------------------------------
 export function createSparkline({ label, unit, color, decimals = 2 }) {

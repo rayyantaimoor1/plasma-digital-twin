@@ -31,8 +31,15 @@ export const api = {
     getJSON(`/api/simulate?${q({ rf_power_w, pressure_mtorr, rf_voltage_v })}`),
 
   // AI Verdict: classifier verdict + confidence + class probabilities.
-  classify: (rf_power_w, pressure_mtorr) =>
-    getJSON(`/api/classify?${q({ rf_power_w, pressure_mtorr })}`),
+  // `classifier` defaults to random_forest server-side; pass 'xgboost' for the
+  // second ensemble's independent verdict (the model-agreement signal).
+  classify: (rf_power_w, pressure_mtorr, classifier) =>
+    getJSON(`/api/classify?${q({ rf_power_w, pressure_mtorr, classifier })}`),
+
+  // AI Verdict: per-prediction SHAP breakdown for the predicted class. The FIRST
+  // call is slow - the backend lazily fits the SHAP-only estimators - then cached.
+  explain: (rf_power_w, pressure_mtorr, classifier) =>
+    getJSON(`/api/explain?${q({ rf_power_w, pressure_mtorr, classifier })}`),
 
   // AI Verdict: window-compliance scorecard (best-fit + compliance %).
   suitabilityScorecard: (rf_power_w, pressure_mtorr, rf_voltage_v) =>

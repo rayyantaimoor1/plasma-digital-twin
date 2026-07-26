@@ -4,7 +4,7 @@
  *
  * Every value is fetched: /api/classify, /api/anomaly, /api/suitability-scorecard.
  * Colours, arc fills and bar widths are the only things computed here (visual). */
-import { createArcGauge, clamp } from '../components.js';
+import { createArcGauge, createShapBars, clamp } from '../components.js';
 
 const CLASS_COLOR = { Optimal: 'var(--green)', Acceptable: 'var(--cyan)', Marginal: 'var(--amber)', Unsuitable: 'var(--red)' };
 // Severity -> arc fill fraction + colour (a VISUAL encoding of the backend's
@@ -55,12 +55,15 @@ export async function renderVerdict(main, { state, api }) {
   const cardsGrid = el('div', 'display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;margin-top:16px');
   main.appendChild(cardsGrid);
 
-  // ---- fetch all three verdicts in parallel ----
-  const [cls, anom0, sc] = await Promise.all([
+  // ---- fetch the verdicts in parallel (SHAP is fetched separately below, since
+  // its first call is slow and must not hold up the rest of the page) ----
+  const [cls, clsXgb, anom0, sc] = await Promise.all([
     api.classify(rf, p),
+    api.classify(rf, p, 'xgboost'),
     api.anomaly(rf, p, 'none'),
     api.suitabilityScorecard(rf, p),
   ]);
+  const agree = cls.predicted_class === clsXgb.predicted_class;
 
   // ---- summary pills ----
   const clsColor = CLASS_COLOR[cls.predicted_class] || 'var(--text)';
@@ -74,6 +77,8 @@ export async function renderVerdict(main, { state, api }) {
     pill('Suitability Class', cls.predicted_class, clsColor),
     sevPill,
     pill('Best-Fit Application', sc.best_application, 'var(--purple)'),
+    pill('Model Agreement', agree ? 'RF = XGBoost' : 'RF ≠ XGBoost',
+      agree ? 'var(--green)' : 'var(--amber)'),
   );
 
   // ---- Card 1: Suitability Class ----
@@ -88,6 +93,18 @@ export async function renderVerdict(main, { state, api }) {
     probsWrap.appendChild(probRow(name, pr, { name: 'var(--text-dim)', bar: CLASS_COLOR[name] || 'var(--cyan)' }));
   });
   c1.el.appendChild(probsWrap);
+
+  // Second-opinion row: XGBoost's independent verdict on the same operating point.
+  const xgbColor = CLASS_COLOR[clsXgb.predicted_class] || 'var(--text)';
+  const secondOpinion = el('div',
+    `display:flex;align-items:center;gap:9px;margin-top:8px;padding:9px 11px;border-radius:9px;background:var(--panel-2);border:1px solid ${agree ? 'rgba(52,211,153,0.3)' : 'rgba(245,158,11,0.35)'}`);
+  secondOpinion.innerHTML =
+    `<span style="width:8px;height:8px;border-radius:50%;flex:none;background:${agree ? 'var(--green)' : 'var(--amber)'};box-shadow:0 0 7px ${agree ? 'var(--green)' : 'var(--amber)'}"></span>`
+    + `<span style="font-size:10.5px;color:var(--text-mute);letter-spacing:0.4px;text-transform:uppercase;flex:none">2nd model</span>`
+    + `<span style="font-size:12px;font-weight:600;color:${xgbColor}">XGBoost: ${clsXgb.predicted_class}</span>`
+    + `<span class="mono" style="font-size:10.5px;color:var(--text-dim)">${pct0(clsXgb.confidence)}</span>`
+    + `<span style="margin-left:auto;font-size:10px;font-weight:600;color:${agree ? 'var(--green)' : 'var(--amber)'}">${agree ? 'AGREES' : 'DIFFERS'}</span>`;
+  c1.el.appendChild(secondOpinion);
   cardsGrid.appendChild(c1.el);
 
   // ---- Card 2: Anomaly Status (with fault injection) ----
@@ -141,6 +158,32 @@ export async function renderVerdict(main, { state, api }) {
     `Ion energy ${sc.ion_energy_ev.toFixed(0)} eV · defect prob ${sc.defect_probability.toFixed(2)} · etching window (100+ eV) needs an applied RF-voltage drive.`));
   c3.el.appendChild(appWrap);
   cardsGrid.appendChild(c3.el);
+
+  // ---- SHAP explanation panel (full width, loaded separately) ----
+  const shapCard = el('div', 'background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:22px 24px 20px;margin-top:18px;position:relative;overflow:hidden;display:flex;flex-direction:column;gap:12px');
+  shapCard.appendChild(el('div', `position:absolute;top:0;left:0;right:0;height:3px;background:${clsColor};opacity:.85`));
+  shapCard.appendChild(el('div', 'display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap',
+    `<span style="font-size:11px;letter-spacing:1.6px;text-transform:uppercase;color:var(--text-dim);font-weight:600">Why this verdict — SHAP feature contributions</span>`
+    + `<span style="font-family:var(--mono);font-size:9px;color:var(--text-mute)">Random Forest · TreeExplainer</span>`));
+  shapCard.appendChild(el('p', 'margin:0;font-size:12.5px;color:var(--text-dim);line-height:1.5',
+    `How much each observable the classifier can see pushed this operating point toward or away from <strong style="color:${clsColor}">${cls.predicted_class}</strong>. The confounders (wall temperature, electrode aging, gas purity) are deliberately withheld from the model, so they cannot appear here.`));
+  const shapBody = el('div', '');
+  shapBody.innerHTML = `<div class="loading" style="padding:18px 2px"><span class="dot"></span> Fitting the SHAP explainer (first run only)…</div>`;
+  shapCard.appendChild(shapBody);
+  main.appendChild(shapCard);
+
+  // Fetched after the page has painted: the first /api/explain call lazily fits
+  // the SHAP-only estimators server-side and is slow; every later call is cached.
+  api.explain(rf, p)
+    .then((expl) => {
+      shapBody.innerHTML = '';
+      const bars = createShapBars();
+      shapBody.appendChild(bars.el);
+      bars.update(expl.feature_contributions, { predictedClass: expl.predicted_class });
+    })
+    .catch((e) => {
+      shapBody.innerHTML = `<div class="err">SHAP explanation unavailable: ${e.message}</div>`;
+    });
 
   return {};
 }

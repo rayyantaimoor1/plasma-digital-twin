@@ -17,13 +17,14 @@ import dataclasses
 
 import pytest
 
-from ai_module.classification import ClassifierKind, classify_configuration
+from ai_module.classification import ClassifierKind, classify_configuration, explain_configuration
 from ai_module.suitability_analysis import (
     SemiconductorApplication,
     all_application_defect_estimates,
     classify_suitability,
 )
 from digital_twin.chamber_config import ChamberParameters
+from digital_twin.dataset_generation import FEATURE_COLUMNS
 from digital_twin.physics_engine import simulate
 from digital_twin.physics_validation import run_literature_benchmarks
 from digital_twin.session_manager import ExperimentDatabase
@@ -56,6 +57,66 @@ def test_classify_endpoint_matches_direct_call() -> None:
     endpoint = backend.api_classify(_RF_POWER, _PRESSURE)
     direct = dataclasses.asdict(classify_configuration(_RF_POWER, _PRESSURE, classifier))
     assert endpoint == direct
+
+
+def test_classify_endpoint_supports_xgboost_and_matches_direct_call() -> None:
+    """/api/classify?classifier=xgboost returns XGBoost's own verdict (option B:
+    the model-agreement signal), identical to calling it directly."""
+    model = backend.get_classifiers()[ClassifierKind.XGBOOST]
+    endpoint = backend.api_classify(_RF_POWER, _PRESSURE, classifier="xgboost")
+    direct = dataclasses.asdict(classify_configuration(_RF_POWER, _PRESSURE, model))
+    assert endpoint == direct
+    assert endpoint["classifier"] == "xgboost"
+    # and it is genuinely a different model, not the default silently reused
+    assert endpoint != backend.api_classify(_RF_POWER, _PRESSURE, classifier="random_forest")
+
+
+def test_classify_endpoint_rejects_unknown_classifier() -> None:
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc_info:
+        backend.api_classify(_RF_POWER, _PRESSURE, classifier="not_a_model")
+    assert exc_info.value.status_code == 422
+
+
+def test_explain_endpoint_matches_direct_call() -> None:
+    """/api/explain == asdict(explain_configuration(...)) using the SAME
+    explainer-enabled classifier and the SAME background sample."""
+    model = backend.get_explainer_classifiers()[ClassifierKind.RANDOM_FOREST]
+    background = backend.get_shap_background()
+    endpoint = backend.api_explain(_RF_POWER, _PRESSURE)
+    direct = dataclasses.asdict(
+        explain_configuration(_RF_POWER, _PRESSURE, model, background)
+    )
+    assert endpoint == direct
+
+
+def test_explain_background_matches_the_dashboards() -> None:
+    """The SHAP reference distribution must be identical to the dashboard's, or the
+    two UIs would report different SHAP values for the same operating point."""
+    from dashboard.backend import get_shap_background as dashboard_background
+
+    ours = backend.get_shap_background()
+    theirs = dashboard_background()
+    assert list(ours.index) == list(theirs.index)
+    assert ours.equals(theirs)
+
+
+def test_explain_agrees_with_the_verdict_it_explains() -> None:
+    """The explanation must be for the class the UI actually displays - otherwise
+    the panel would justify a verdict the user never saw."""
+    verdict = backend.api_classify(_RF_POWER, _PRESSURE)
+    explanation = backend.api_explain(_RF_POWER, _PRESSURE)
+    assert explanation["predicted_class"] == verdict["predicted_class"]
+    assert set(explanation["feature_contributions"]) == set(FEATURE_COLUMNS)
+
+
+def test_explain_endpoint_rejects_the_baseline_model() -> None:
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc_info:
+        backend.api_explain(_RF_POWER, _PRESSURE, classifier="logistic_regression")
+    assert exc_info.value.status_code == 422
 
 
 def test_suitability_endpoint_matches_direct_call() -> None:

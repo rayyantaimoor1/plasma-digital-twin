@@ -47,9 +47,14 @@ from ai_module.anomaly_detection import (
     generate_normal_operating_data,
     inject_anomaly,
 )
-from ai_module.classification import ClassifierKind, classify_configuration, train_classifiers
+from ai_module.classification import (
+    ClassifierKind,
+    classify_configuration,
+    explain_configuration,
+    train_classifiers,
+)
 from ai_module.suitability_analysis import all_application_defect_estimates, classify_suitability
-from digital_twin.dataset_generation import FEATURE_COLUMNS, generate_dataset
+from digital_twin.dataset_generation import FEATURE_COLUMNS, features_and_labels, generate_dataset
 from digital_twin.physics_engine import simulate
 from digital_twin.physics_validation import run_literature_benchmarks
 from digital_twin.session_manager import ExperimentDatabase
@@ -87,14 +92,47 @@ app.add_middleware(
 def get_classifiers():
     """Train the classifiers ONCE (cached) via the existing `train_classifiers`,
     on the same dataset parameters the dashboard uses. No model logic here - a
-    cached call into ai_module. `with_explainer=False` because this backend only
-    ever predicts; SHAP is a dashboard-only concern (halves ensemble training)."""
-    dataset = generate_dataset(
+    cached call into ai_module. `with_explainer=False` skips the SHAP-only second
+    fit of each ensemble (roughly halving training time); the explanation endpoint
+    builds its own explainer-enabled set lazily - see `get_explainer_classifiers`."""
+    return train_classifiers(get_dataset(), with_explainer=False)
+
+
+@lru_cache(maxsize=1)
+def get_dataset():
+    """The synthetic training dataset, built once (cached). Same parameters the
+    dashboard uses, so both UIs train on identical data."""
+    return generate_dataset(
         power_step_w=_DATASET_POWER_STEP,
         pressure_step_mtorr=_DATASET_PRESSURE_STEP,
         replicates_per_recipe=_DATASET_REPLICATES,
     )
-    return train_classifiers(dataset, with_explainer=False)
+
+
+@lru_cache(maxsize=1)
+def get_explainer_classifiers():
+    """Classifiers trained WITH the SHAP explainer fit, built LAZILY.
+
+    `get_classifiers()` above deliberately passes `with_explainer=False`, which
+    skips a second (uncalibrated) fit of each ensemble and roughly halves training
+    time - but leaves `shap_values()` unavailable. SHAP therefore needs its own
+    build. It is a separate lru_cache rather than simply flipping that flag so the
+    cost is paid ONLY if someone opens the explanation panel: the Reactor View and
+    the rest of AI Verdict stay as fast as before.
+
+    Predictions from these classifiers are identical to `get_classifiers()`' -
+    same data, same hyperparameters, same seed - so the explanation always matches
+    the verdict shown alongside it."""
+    return train_classifiers(get_dataset(), with_explainer=True)
+
+
+@lru_cache(maxsize=1)
+def get_shap_background():
+    """SHAP reference distribution: 40 sampled training rows, matching
+    `dashboard/backend.py:get_shap_background` exactly (same size, same seed) so
+    the companion app and the dashboard report identical SHAP values."""
+    features, _labels = features_and_labels(get_dataset())
+    return features.sample(40, random_state=0)
 
 
 @lru_cache(maxsize=1)
@@ -204,7 +242,7 @@ def root() -> dict[str, Any]:
         "status": "ok",
         "note": "Thin JSON wrapper over the digital twin / AI functions; no math runs here.",
         "endpoints": [
-            "/api/simulate", "/api/classify", "/api/suitability",
+            "/api/simulate", "/api/classify", "/api/explain", "/api/suitability",
             "/api/suitability-scorecard", "/api/anomaly", "/api/physics-validation",
             "/api/sessions", "/api/sessions/{session_id}", "/api/system/stats",
         ],
@@ -220,13 +258,54 @@ def api_simulate(
     return simulate(rf_power_w, pressure_mtorr, rf_voltage_v=rf_voltage_v).to_dict()
 
 
+def _classifier_kind(name: str) -> ClassifierKind:
+    """Validate a classifier query param, 422 on anything unknown."""
+    try:
+        return ClassifierKind(name)
+    except ValueError:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown classifier {name!r}; must be one of "
+                   f"{sorted(k.value for k in ClassifierKind)}",
+        )
+
+
 @app.get("/api/classify")
-def api_classify(rf_power_w: float, pressure_mtorr: float) -> dict[str, Any]:
+def api_classify(
+    rf_power_w: float, pressure_mtorr: float, classifier: str = "random_forest"
+) -> dict[str, Any]:
     """AI Verdict: the suitability-class prediction + confidence for one operating
-    point, using the Random Forest (the dashboard's primary classifier). Wraps
+    point. Defaults to the Random Forest (the dashboard's primary classifier);
+    pass `classifier=xgboost` to get the second ensemble's independent verdict, so
+    the UI can show whether the two models agree. Wraps
     `ai_module.classification.classify_configuration`."""
-    classifier = get_classifiers()[ClassifierKind.RANDOM_FOREST]
-    return dataclasses.asdict(classify_configuration(rf_power_w, pressure_mtorr, classifier))
+    model = get_classifiers()[_classifier_kind(classifier)]
+    return dataclasses.asdict(classify_configuration(rf_power_w, pressure_mtorr, model))
+
+
+@app.get("/api/explain")
+def api_explain(
+    rf_power_w: float, pressure_mtorr: float, classifier: str = "random_forest"
+) -> dict[str, Any]:
+    """AI Verdict: per-prediction SHAP breakdown - how much each observable feature
+    pushed THIS operating point toward its predicted class. Wraps
+    `ai_module.classification.explain_configuration`.
+
+    Uses the lazily-built explainer-enabled classifiers, so the first call is slow
+    (it fits the SHAP-only estimators) and every later call is cached."""
+    kind = _classifier_kind(classifier)
+    if kind is ClassifierKind.LOGISTIC_REGRESSION:
+        # The baseline has no TreeExplainer; explaining it is out of scope here.
+        raise HTTPException(
+            status_code=422,
+            detail="SHAP explanation is available for the ensemble models "
+                   "(random_forest, xgboost), not the logistic-regression baseline.",
+        )
+    model = get_explainer_classifiers()[kind]
+    explanation = explain_configuration(
+        rf_power_w, pressure_mtorr, model, get_shap_background()
+    )
+    return dataclasses.asdict(explanation)
 
 
 @app.get("/api/suitability")
