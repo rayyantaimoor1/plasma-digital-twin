@@ -27,11 +27,13 @@ Supervisor: Dr. Majid Iqbal.
 ## Project layout
 
 ```
-digital_twin/   Sub-Modules 1.1-1.6 — physics engine, dataset generation, sensitivity, validation
-ai_module/      Sub-Modules 2.1-2.8 — classification, anomaly detection, recommendations
-dashboard/      Streamlit + Plotly UI unifying both modules (Phase 3)
-data/           Generated SQLite DB, CSV datasets, MLflow tracking store (gitignored, reproducible)
-tests/          pytest suite — one test file per module
+digital_twin/          Sub-Modules 1.1-1.6 — physics engine, dataset generation, sensitivity, validation
+ai_module/             Sub-Modules 2.1-2.8 — classification, anomaly detection, recommendations
+dashboard/             Streamlit + Plotly UI unifying both modules (Phase 3) — the graded deliverable
+reactor_control_room/  Optional companion app: FastAPI backend + static frontend (demo/viva use)
+error_fixing_attempts/ Post-mortems of deliberate fix attempts, including rejected ones
+data/                  Generated SQLite DB, CSV datasets, MLflow tracking store (gitignored, reproducible)
+tests/                 pytest suite — one test file per module
 ```
 
 ## Setup
@@ -66,8 +68,31 @@ streamlit run dashboard/app.py
 
 The first load trains the models and builds the conformal uncertainty layer once
 (cached thereafter). Set the operating point in the sidebar; the specialised panels
-(Digital Twin, AI Analytics, Anomaly Monitor, Trends & Correlation, Suitability &
-Recommendations, Session History, Model Training) are in the left-hand navigation.
+(Digital Twin, Physics Validation, AI Analytics, Anomaly Monitor, Trends & Correlation,
+Suitability & Recommendations, Session History, Model Training) are in the left-hand
+navigation.
+
+On Windows you can start it by double-clicking [`run_streamlit.bat`](run_streamlit.bat)
+instead — no typed command needed, which is the intended path for a live demo.
+
+## Running the Reactor Control Room (optional companion app)
+
+A separate, presentation-oriented UI over the *same* functions — see
+[`reactor_control_room/`](reactor_control_room). Its backend is a thin JSON wrapper that
+performs no physics or AI of its own, so it and the Streamlit dashboard are structurally
+guaranteed to agree; `tests/test_reactor_backend.py` asserts each endpoint returns exactly
+what the underlying function returns.
+
+```bash
+pip install -r reactor_control_room/requirements.txt   # fastapi, uvicorn, psutil
+uvicorn reactor_control_room.backend.app:app           # then open http://127.0.0.1:8000/
+```
+
+Or double-click [`run_reactor.bat`](run_reactor.bat) for it alone, or
+[`run_both.bat`](run_both.bat) to launch it alongside the Streamlit dashboard.
+
+Its extra dependencies are deliberately kept **out** of the core `requirements.txt`, so
+the graded stack locked in [`CLAUDE.md`](CLAUDE.md) stays exactly as specified.
 
 ## Running tests
 

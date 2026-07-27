@@ -40,6 +40,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          # The Reactor Control Room companion app keeps its extra dependencies
+          # (fastapi / uvicorn / psutil) in its OWN requirements file, deliberately
+          # out of the core stack locked in CLAUDE.md. tests/test_reactor_backend.py
+          # imports that backend and carries no exclusion marker, so CI must install
+          # them too - without this the run fails at collection on `import psutil`.
+          pip install -r reactor_control_room/requirements.txt
 
       - name: Run tests (excluding the slow dashboard and optional-torch tests)
         # Excludes two groups to keep CI fast and lightweight:

@@ -149,6 +149,60 @@ operating point.
 
 To stop the dashboard, press `Ctrl+C` in the terminal it's running in.
 
+### Double-click launchers (Windows)
+
+For a live demo or viva, where typing commands is awkward, three batch files at the
+project root do the same thing on a double-click:
+
+| File | Starts |
+|---|---|
+| [`run_streamlit.bat`](run_streamlit.bat) | The Streamlit dashboard alone (this section) |
+| [`run_reactor.bat`](run_reactor.bat) | The Reactor Control Room alone (section 6b) |
+| [`run_both.bat`](run_both.bat) | Both, each in its own window, opening both in the browser |
+
+Each checks that the virtual environment exists first and pauses on exit, so an error
+stays readable instead of the window closing instantly.
+
+---
+
+## 6b. Run the Reactor Control Room (optional companion app)
+
+A separate, presentation-oriented UI built over the **same** functions as the dashboard
+— see [`reactor_control_room/README.md`](reactor_control_room/README.md). It is *not*
+part of the graded core stack; its backend is a thin JSON wrapper that performs no
+physics or AI of its own, so both UIs are structurally guaranteed to show identical
+numbers for identical inputs.
+
+Its extra dependencies are scoped to their own file, deliberately kept out of the core
+`requirements.txt`:
+
+```bash
+pip install -r reactor_control_room/requirements.txt
+```
+
+Then, from the project root:
+
+```bash
+uvicorn reactor_control_room.backend.app:app
+```
+
+Open <http://127.0.0.1:8000/> for the control room, or <http://127.0.0.1:8000/docs> for
+the interactive API. Four pages: **Reactor View** (chamber + controls + 10 output
+gauges), **AI Verdict** (classification with SHAP explanations, anomaly status,
+best-fit application), **Physics Validation**, and **Session Replay**.
+
+Session Replay reads saved runs from the same SQLite store as the dashboard. If it is
+empty, seed a spread of real `simulate()` runs:
+
+```bash
+python reactor_control_room/seed_demo_sessions.py
+```
+
+> **First load is slow, twice.** The first classification request trains the models
+> (~20 s), and the first SHAP request additionally fits the explainer (~25 s). Both are
+> cached afterwards — later requests are ~1–2 s. Open the app once before a live demo so
+> the audience never waits.
+
 ---
 
 ## 7. Run individual sub-modules standalone (no dashboard)
